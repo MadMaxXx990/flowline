@@ -7,6 +7,7 @@ const deptC = require('../controllers/departmentController');
 const posC  = require('../controllers/positionController');
 const teamC = require('../controllers/teamController');
 const empC  = require('../controllers/employeeController');
+const taskC = require('../controllers/taskController');
 
 // All admin routes require authentication and the Administrator role.
 router.use(authenticate, authorize('Administrator'));
@@ -19,11 +20,20 @@ router.get('/dashboard', (req, res) => {
   });
 });
 
+// ── Tasks ─────────────────────────────────────────────────────────────────────
+router.get('/tasks',               taskC.board);
+router.get('/tasks/new',           taskC.newForm);
+router.post('/tasks',              upload.array('attachments', 10), taskC.store);
+router.get('/tasks/:id',           taskC.show);
+router.get('/tasks/:id/edit',      taskC.editForm);
+router.post('/tasks/:id',          taskC.update);   // ?_method=PUT
+router.delete('/tasks/:id',        taskC.destroy);  // ?_method=DELETE
+
 // ── Departments ───────────────────────────────────────────────────────────────
 router.get('/departments',          deptC.index);
 router.post('/departments',         deptC.store);
-router.post('/departments/:id',     deptC.update);   // ?_method=PUT via method-override
-router.delete('/departments/:id',   deptC.destroy);  // ?_method=DELETE
+router.post('/departments/:id',     deptC.update);
+router.delete('/departments/:id',   deptC.destroy);
 
 // ── Positions ─────────────────────────────────────────────────────────────────
 router.get('/positions',          posC.index);
@@ -38,17 +48,15 @@ router.post('/teams/:id',     teamC.update);
 router.delete('/teams/:id',   teamC.destroy);
 
 // ── Employees ─────────────────────────────────────────────────────────────────
-// Photo route: any authenticated user may view; guard is just authenticate (already applied above)
-router.get('/employees/:id/photo', empC.photo);
+// Note: photo is on a shared route in index.js — available to all logged-in roles.
 
 router.get('/employees',              empC.index);
 router.get('/employees/new',          empC.newForm);
 router.post('/employees',             upload.single('profile_photo'), empC.store);
 router.get('/employees/:id',          empC.show);
 router.get('/employees/:id/edit',     empC.editForm);
-router.post('/employees/:id',         upload.single('profile_photo'), empC.update);   // ?_method=PUT
-router.delete('/employees/:id',       empC.destroy);  // ?_method=DELETE
+router.post('/employees/:id',         upload.single('profile_photo'), empC.update);
+router.delete('/employees/:id',       empC.destroy);
 
 module.exports = router;
-// Export loadTeamsData so the task form can reuse it without a HTTP round-trip
 module.exports.loadTeamsData = teamC.loadTeamsData;

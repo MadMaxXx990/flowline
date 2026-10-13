@@ -1,0 +1,118 @@
+<%
+  /*
+   * Shared task form partial.
+   * Expected locals: formValues, employees, teams, priorities, error,
+   *                  actionUrl, submitLabel, isEdit
+   */
+  const f = formValues || {};
+  const selectedIds = (f.employee_ids || []).map(Number);
+%>
+
+<% if (locals.error) { %>
+  <div class="alert alert-danger d-flex align-items-center gap-2 py-2 small mb-4">
+    <i class="bi bi-exclamation-circle-fill"></i> <%= locals.error %>
+  </div>
+<% } %>
+
+<form method="POST" action="<%= actionUrl %>" enctype="multipart/form-data" id="task-form">
+  <% if (locals.isEdit) { %>
+    <input type="hidden" name="_method" value="PUT" />
+  <% } %>
+
+  <!-- Step 1 — Task Details -->
+  <h6 class="text-uppercase text-muted fw-semibold mb-3" style="font-size:.7rem;letter-spacing:.1em;">Step 1 — Task Details</h6>
+  <div class="mb-3">
+    <label class="form-label small fw-semibold">Task Title <span class="text-danger">*</span></label>
+    <input type="text" name="task_title" class="form-control" required value="<%= f.task_title || '' %>" />
+  </div>
+  <div class="mb-4">
+    <label class="form-label small fw-semibold">Description</label>
+    <textarea name="task_description" class="form-control" rows="4"><%= f.task_description || '' %></textarea>
+  </div>
+
+  <hr class="my-4" />
+
+  <!-- Step 2 — Assign Employees -->
+  <h6 class="text-uppercase text-muted fw-semibold mb-3" style="font-size:.7rem;letter-spacing:.1em;">Step 2 — Assign Employees</h6>
+
+  <!-- Team quick-pick — handled by tasks.js, no inline JS -->
+  <% if ((teams || []).length > 0) { %>
+  <div class="mb-3">
+    <label class="form-label small fw-semibold">Add a team</label>
+    <select class="form-select form-select-sm" style="max-width:300px;"
+            id="teamQuickPick"
+            data-teams="<%- JSON.stringify((teams||[]).map(t=>({id:t.team_id,name:t.team_name,members:(t.members||[]).map(m=>m.employee_id)}))) %>">
+      <option value="">Select a team to tick its members…</option>
+      <% (teams || []).forEach(t => { %>
+        <option value="<%= t.team_id %>"><%= t.team_name %></option>
+      <% }) %>
+    </select>
+  </div>
+  <% } %>
+
+  <!-- Employee checkboxes -->
+  <div class="row g-2 mb-4" style="max-height:260px;overflow-y:auto;" id="employee-list">
+    <% (employees || []).forEach(emp => { %>
+      <%
+        const checked = selectedIds.includes(emp.employee_id);
+        const deptName = emp.department ? emp.department.department_name : '';
+      %>
+      <div class="col-md-6">
+        <label class="d-flex align-items-center gap-2 p-2 border rounded"
+               style="cursor:pointer;background:<%= checked ? '#eef2ff' : '#fff' %>;"
+               id="emp-label-<%= emp.employee_id %>">
+          <input type="checkbox" name="employee_ids" value="<%= emp.employee_id %>"
+                 class="form-check-input mt-0 emp-checkbox"
+                 data-emp-id="<%= emp.employee_id %>"
+                 <%= checked ? 'checked' : '' %> />
+          <div>
+            <div class="fw-semibold small"><%= emp.first_name %> <%= emp.last_name %></div>
+            <div class="text-muted" style="font-size:.7rem;"><%= deptName %></div>
+          </div>
+        </label>
+      </div>
+    <% }) %>
+  </div>
+
+  <hr class="my-4" />
+
+  <!-- Step 3 — Priority & Deadline -->
+  <h6 class="text-uppercase text-muted fw-semibold mb-3" style="font-size:.7rem;letter-spacing:.1em;">Step 3 — Priority &amp; Deadline</h6>
+  <div class="row g-3 mb-4">
+    <div class="col-md-4">
+      <label class="form-label small fw-semibold">Priority <span class="text-danger">*</span></label>
+      <select name="priority_id" class="form-select" required>
+        <option value="">Select…</option>
+        <% (priorities || []).forEach(p => { %>
+          <option value="<%= p.priority_id %>" <%= String(f.priority_id) === String(p.priority_id) ? 'selected':'' %>><%= p.priority_name %></option>
+        <% }) %>
+      </select>
+    </div>
+    <div class="col-md-4">
+      <label class="form-label small fw-semibold">Start Date</label>
+      <input type="date" name="start_date" class="form-control" value="<%= f.start_date || '' %>" />
+    </div>
+    <div class="col-md-4">
+      <label class="form-label small fw-semibold">Due Date <span class="text-danger">*</span></label>
+      <input type="date" name="due_date" class="form-control" required value="<%= f.due_date || '' %>" />
+    </div>
+  </div>
+
+  <% if (!locals.isEdit) { %>
+  <!-- Attachments on create -->
+  <hr class="my-4" />
+  <h6 class="text-uppercase text-muted fw-semibold mb-3" style="font-size:.7rem;letter-spacing:.1em;">Attachments (optional)</h6>
+  <div class="mb-4">
+    <input type="file" name="attachments" class="form-control" multiple
+           accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.png,.jpg,.jpeg" />
+    <div class="form-text">PDF, Word, Excel, PowerPoint, TXT, CSV, PNG, JPG — max 10 MB each</div>
+  </div>
+  <% } %>
+
+  <div class="d-flex justify-content-end gap-2">
+    <a href="<%= basePath %>/tasks" class="btn btn-light">Cancel</a>
+    <button type="submit" class="btn btn-primary">
+      <i class="bi bi-send-fill me-1"></i><%= submitLabel || 'Save' %>
+    </button>
+  </div>
+</form>

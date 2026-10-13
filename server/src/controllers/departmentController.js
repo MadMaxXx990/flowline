@@ -1,6 +1,6 @@
 'use strict';
 const { Op }        = require('sequelize');
-const { Department, Employee } = require('../models');
+const { Department, Employee, Team } = require('../models');
 const { log }       = require('../lib/activityLog');
 const { setFlash }  = require('../middleware/flash');
 
@@ -62,6 +62,21 @@ const update = async (req, res) => {
 
 const destroy = async (req, res) => {
   const id = +req.params.id;
+
+  // Block if active employees are still assigned
+  const empCount = await Employee.count({ where: { department_id: id, is_deleted: false } });
+  if (empCount > 0) {
+    setFlash(res, 'danger', `Cannot remove this department: ${empCount} employee${empCount > 1 ? 's' : ''} must be reassigned first.`);
+    return res.redirect('/admin/departments');
+  }
+
+  // Block if teams still belong to this department
+  const teamCount = await Team.count({ where: { department_id: id, is_deleted: false } });
+  if (teamCount > 0) {
+    setFlash(res, 'danger', `Cannot remove this department: ${teamCount} team${teamCount > 1 ? 's' : ''} must be reassigned first.`);
+    return res.redirect('/admin/departments');
+  }
+
   await Department.update({ is_deleted: true }, { where: { department_id: id } });
   await log(req.user.id, 'delete', `Deleted department id ${id}`, 'departments', id);
   setFlash(res, 'success', 'Department removed.');

@@ -269,7 +269,27 @@ const update = async (req, res) => {
   });
 
   if (existingUser) {
-    const userUpdate = { role_id: role_id ? +role_id : null, username };
+    const newRoleId = role_id ? +role_id : null;
+
+    // Guard: cannot demote yourself away from Administrator if you are the last active one.
+    if (existingUser.id === req.user.id && req.user.role === 'Administrator') {
+      const adminRole = await Role.findOne({ where: { role_name: 'Administrator' } });
+      if (adminRole && newRoleId !== adminRole.role_id) {
+        const otherAdminCount = await User.count({
+          where: {
+            role_id:    adminRole.role_id,
+            is_deleted: false,
+            status:     'active',
+            id:         { [Op.ne]: existingUser.id },
+          },
+        });
+        if (otherAdminCount === 0) {
+          return renderError('You are the last active Administrator. Assign another Administrator before changing your own role.');
+        }
+      }
+    }
+
+    const userUpdate = { role_id: newRoleId, username };
     if (password && password.length >= 6) {
       userUpdate.password = await bcrypt.hash(password, 10);
     }
@@ -291,6 +311,12 @@ const destroy = async (req, res) => {
   if (!emp) {
     setFlash(res, 'danger', 'Employee not found.');
     return res.redirect('/admin/employees');
+  }
+
+  // Guard: an Administrator cannot archive their own account.
+  if (emp.user && emp.user.id === req.user.id) {
+    setFlash(res, 'danger', 'You cannot archive your own account.');
+    return res.redirect(`/admin/employees/${id}`);
   }
 
   // Soft-delete: mark as archived — all historical records are preserved.

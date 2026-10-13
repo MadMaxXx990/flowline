@@ -60,6 +60,14 @@ const update = async (req, res) => {
 // Preserved exactly — positions have no is_deleted column in the schema.
 const destroy = async (req, res) => {
   const id = +req.params.id;
+
+  // Block if active employees are still assigned
+  const empCount = await Employee.count({ where: { position_id: id, is_deleted: false } });
+  if (empCount > 0) {
+    setFlash(res, 'danger', `Cannot remove this position: ${empCount} employee${empCount > 1 ? 's' : ''} must be reassigned first.`);
+    return res.redirect('/admin/positions');
+  }
+
   await Position.destroy({ where: { position_id: id } });
   setFlash(res, 'success', 'Position removed.');
   return res.redirect('/admin/positions');

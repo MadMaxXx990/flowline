@@ -1,0 +1,113 @@
+<%- include('../partials/layout_start') %>
+<%
+  const stageColors = {
+    'Pending':     '#9ca3af',
+    'In Progress': '#3b82f6',
+    'For Review':  '#f59e0b',
+    'Completed':   '#10b981',
+    'Overdue':     '#ef4444',
+  };
+  const priorityColors = { Low: 'secondary', Medium: 'warning', High: 'danger' };
+  const today = new Date(); today.setHours(0,0,0,0);
+%>
+
+<!-- Toolbar -->
+<div class="d-flex flex-wrap gap-2 justify-content-between align-items-center mb-4">
+  <div class="page-heading">Task Board</div>
+  <div class="d-flex flex-wrap gap-2 align-items-center">
+    <form method="GET" action="<%= basePath %>/tasks" class="d-flex flex-wrap gap-2">
+      <input type="text" name="search" class="form-control form-control-sm" style="width:180px;"
+             placeholder="Search tasks…" value="<%= query.search %>" />
+      <select name="priority_id" class="form-select form-select-sm" style="width:130px;">
+        <option value="">All Priorities</option>
+        <% (priorities || []).forEach(p => { %>
+          <option value="<%= p.priority_id %>" <%= query.priority_id == p.priority_id ? 'selected':'' %>><%= p.priority_name %></option>
+        <% }) %>
+      </select>
+      <% if (canManage) { %>
+      <select name="employee_id" class="form-select form-select-sm" style="width:160px;">
+        <option value="">All Employees</option>
+        <% (employees || []).forEach(e => { %>
+          <option value="<%= e.employee_id %>" <%= query.employee_id == e.employee_id ? 'selected':'' %>><%= e.first_name %> <%= e.last_name %></option>
+        <% }) %>
+      </select>
+      <% } %>
+      <button type="submit" class="btn btn-outline-secondary btn-sm">Filter</button>
+      <a href="<%= basePath %>/tasks" class="btn btn-outline-secondary btn-sm">Clear</a>
+    </form>
+    <% if (canManage) { %>
+      <a href="<%= basePath %>/tasks/new" class="btn btn-primary btn-sm">
+        <i class="bi bi-plus-circle me-1"></i>Assign Task
+      </a>
+    <% } %>
+  </div>
+</div>
+
+<!-- Kanban columns — server-rendered EJS loops, no client-side rebuild -->
+<div style="display:flex;gap:1rem;overflow-x:auto;padding-bottom:1rem;align-items:flex-start;">
+  <% (allStages || []).forEach(stage => { %>
+    <%
+      const color = stageColors[stage.stage_name] || '#9ca3af';
+      const cards = (grouped[stage.stage_name] || []);
+    %>
+    <div style="min-width:240px;flex:0 0 240px;">
+      <!-- Column header -->
+      <div class="d-flex justify-content-between align-items-center mb-3"
+           style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;">
+        <span style="color:<%= color %>"><%= stage.stage_name %></span>
+        <span class="badge rounded-pill" style="background:<%= color %>20;color:<%= color %>;font-size:.72rem;">
+          <%= cards.length %>
+        </span>
+      </div>
+
+      <!-- Cards -->
+      <% if (cards.length === 0) { %>
+        <div class="text-center py-3 text-muted" style="font-size:.75rem;">No tasks</div>
+      <% } %>
+      <% cards.forEach(t => { %>
+        <%
+          const due     = t.due_date ? new Date(t.due_date) : null;
+          const overdue = due && due < today && stage.stage_name !== 'Completed';
+          const prog    = (t.updates && t.updates[0]) ? t.updates[0].progress_percent : 0;
+          const pname   = t.priority ? t.priority.priority_name : '';
+          const pcol    = priorityColors[pname] || 'secondary';
+          const title   = t.task_title.length > 48 ? t.task_title.slice(0,48)+'…' : t.task_title;
+          // Up to 2 assignee initials + overflow count
+          const assignees = t.assignments || [];
+        %>
+        <a href="<%= basePath %>/tasks/<%= t.task_id %>"
+           class="d-block text-decoration-none mb-2 p-3 bg-white rounded shadow-sm border"
+           style="transition:box-shadow .15s;">
+          <div class="fw-semibold small mb-2" style="color:#1e1b4b;line-height:1.3;"><%= title %></div>
+          <div class="d-flex justify-content-between mb-2 align-items-center">
+            <span class="badge bg-<%= pcol %>-subtle text-<%= pcol %> border" style="font-size:.65rem;"><%= pname %></span>
+            <span style="font-size:.7rem;color:<%= overdue ? '#ef4444' : '#9ca3af' %>;">
+              <% if (due) { %><%= due.toLocaleDateString('en-US',{month:'short',day:'numeric'}) %><% } %>
+            </span>
+          </div>
+          <!-- Progress bar -->
+          <div class="progress mb-1" style="height:4px;">
+            <div class="progress-bar" style="width:<%= prog %>%;background:<%= color %>;"></div>
+          </div>
+          <div class="d-flex justify-content-between align-items-center" style="font-size:.7rem;color:#9ca3af;">
+            <!-- Assignee initials -->
+            <div class="d-flex gap-1">
+              <% assignees.slice(0,2).forEach(a => { %>
+                <% const init = a.employee ? (a.employee.first_name||'?')[0].toUpperCase() : '?'; %>
+                <span class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center fw-bold"
+                      style="width:20px;height:20px;font-size:.6rem;"><%= init %></span>
+              <% }) %>
+              <% if (assignees.length > 2) { %>
+                <span class="rounded-circle bg-secondary text-white d-flex align-items-center justify-content-center fw-bold"
+                      style="width:20px;height:20px;font-size:.6rem;">+<%= assignees.length - 2 %></span>
+              <% } %>
+            </div>
+            <span><%= prog %>%</span>
+          </div>
+        </a>
+      <% }) %>
+    </div>
+  <% }) %>
+</div>
+
+<%- include('../partials/layout_end') %>

@@ -57,6 +57,10 @@ app.use('/vendor/chart.js',         express.static(path.join(__dirname, '..', 'n
 
 // ── Static uploads ── removed: files are served through the authenticated /api/files route ──
 
+// ── Shared authenticated routes (any logged-in role) ─────────────────────────
+// Profile photo — available to any authenticated user, no role restriction
+app.get('/employees/:id/photo', require('./middleware/auth').authenticate, require('./controllers/employeeController').photo);
+
 // ── Page routes (EJS) ─────────────────────────────────────────────────────────
 app.use('/',          require('./routes/auth'));
 app.use('/admin',     require('./routes/admin'));
@@ -68,7 +72,7 @@ app.use('/api/employees',     require('./routes/employees'));
 app.use('/api/departments',   require('./routes/departments'));
 app.use('/api/teams',         require('./routes/teams'));
 app.use('/api/positions',     require('./routes/positions'));
-app.use('/api/tasks',         require('./routes/tasks'));
+// /api/tasks removed — task pages are now server-rendered via /admin/tasks, /manager/tasks, /employee/tasks
 app.use('/api/attendance',    require('./routes/attendance'));
 app.use('/api/files',         require('./routes/files'));
 app.use('/api/notifications', require('./routes/notifications'));

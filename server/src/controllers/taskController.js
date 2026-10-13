@@ -1,204 +1,407 @@
-const prisma  = require('../lib/prisma');
-const { log } = require('../lib/activityLog');
-const { send } = require('../lib/notify');
+'use strict';
+const { Op }         = require('sequelize');
+const {
+  Task, TaskAssignment, TaskUpdate, TaskStageHistory,
+  TaskComment, Approval, Attachment,
+  WorkflowStage, TaskPriority,
+  Employee, User, Department, Position, Team,
+} = require('../models');
+const { log }       = require('../lib/activityLog');
+const { send }      = require('../lib/notify');
+const { setFlash }  = require('../middleware/flash');
 
-const taskInclude = {
-  stage: true, priority: true,
-  creator: { include: { employee: true } },
-  assignments: { include: { employee: { include: { position: true } } } },
-  updates:     { orderBy: { update_date: 'desc' } },
-  stageHistory:{ include: { changedBy: { include: { employee: true } }, oldStage: true, newStage: true }, orderBy: { changed_at: 'desc' } },
-  comments:    { where: { is_deleted: false }, include: { user: { include: { employee: true } } }, orderBy: { created_at: 'asc' } },
-  approvals:   { include: { approver: { include: { employee: true } } }, orderBy: { requested_at: 'desc' } },
-  attachments: { where: { is_deleted: false }, include: { uploadedBy: { include: { employee: true } } } },
+// ── Shared deep include for show / edit ───────────────────────────────────────
+const taskInclude = [
+  { model: WorkflowStage, as: 'stage' },
+  { model: TaskPriority,  as: 'priority' },
+  {
+    model: User, as: 'creator',
+    include: [{ model: Employee, as: 'employee' }],
+  },
+  {
+    model: TaskAssignment, as: 'assignments',
+    include: [{
+      model: Employee, as: 'employee',
+      include: [{ model: Position, as: 'position' }],
+    }],
+  },
+  { model: TaskUpdate, as: 'updates', order: [['update_date', 'DESC']] },
+  {
+    model: TaskStageHistory, as: 'stageHistory',
+    include: [
+      { model: User, as: 'changedBy', include: [{ model: Employee, as: 'employee' }] },
+      { model: WorkflowStage, as: 'oldStage' },
+      { model: WorkflowStage, as: 'newStage'  },
+    ],
+  },
+  {
+    model: TaskComment, as: 'comments',
+    where: { is_deleted: false }, required: false,
+    include: [{ model: User, as: 'user', include: [{ model: Employee, as: 'employee' }] }],
+  },
+  {
+    model: Approval, as: 'approvals',
+    include: [{ model: User, as: 'approver', include: [{ model: Employee, as: 'employee' }] }],
+  },
+  {
+    model: Attachment, as: 'attachments',
+    where: { is_deleted: false }, required: false,
+    include: [{ model: User, as: 'uploadedBy', include: [{ model: Employee, as: 'employee' }] }],
+  },
+];
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+const PRIORITIES = [
+  { priority_id: 1, priority_name: 'Low' },
+  { priority_id: 2, priority_name: 'Medium' },
+  { priority_id: 3, priority_name: 'High' },
+];
+
+const STAGE_COLORS = {
+  'Pending':     '#9ca3af',
+  'In Progress': '#3b82f6',
+  'For Review':  '#f59e0b',
+  'Completed':   '#10b981',
+  'Overdue':     '#ef4444',
 };
 
-const index = async (req, res) => {
+async function loadFormData() {
+  const [employees, teams, stages] = await Promise.all([
+    Employee.findAll({
+      where: { is_deleted: false },
+      include: [{ model: Department, as: 'department' }],
+      order: [['first_name', 'ASC'], ['last_name', 'ASC']],
+    }),
+    Team.findAll({
+      where: { is_deleted: false },
+      include: [
+        { model: Employee, as: 'members', where: { is_deleted: false }, required: false,
+          attributes: ['employee_id', 'first_name', 'last_name'] },
+      ],
+      attributes: ['team_id', 'team_name', 'department_id'],
+      order: [['team_name', 'ASC']],
+    }),
+    WorkflowStage.findAll({ order: [['step_order', 'ASC']] }),
+  ]);
+  return { employees, teams, stages, priorities: PRIORITIES };
+}
+
+// ── BOARD ─────────────────────────────────────────────────────────────────────
+const board = async (req, res) => {
   const { search, priority_id, stage_id, employee_id } = req.query;
   const where = { is_deleted: false };
 
-  // Employees only see their own assigned tasks
+  // Role scoping — same rules as the original
   if (req.user.role === 'Employee') {
-    where.assignments = { some: { employee_id: +req.user.employeeId } };
+    where['$assignments.employee_id$'] = +req.user.employeeId;
   }
-  // Managers only see tasks they created
   if (req.user.role === 'Manager') {
     where.created_by_user_id = req.user.id;
   }
 
-  if (search)      where.task_title = { contains: search };
+  if (search)      where.task_title  = { [Op.like]: `%${search}%` };
   if (priority_id) where.priority_id = +priority_id;
   if (stage_id)    where.stage_id    = +stage_id;
-  if (employee_id) where.assignments = { some: { employee_id: +employee_id } };
 
-  const tasks = await prisma.task.findMany({
+  const includeForBoard = [
+    { model: WorkflowStage, as: 'stage' },
+    { model: TaskPriority,  as: 'priority' },
+    {
+      model: TaskAssignment, as: 'assignments',
+      include: [{ model: Employee, as: 'employee' }],
+      // Required join for Employee scoping; otherwise left join
+      required: req.user.role === 'Employee',
+    },
+    { model: TaskUpdate, as: 'updates', limit: 1, order: [['update_date', 'DESC']], required: false },
+  ];
+
+  // employee_id filter (admin only — employees don't get this filter in the view)
+  let assigneeFilter = {};
+  if (employee_id && req.user.role !== 'Employee') {
+    assigneeFilter = { '$assignments.employee_id$': +employee_id };
+    Object.assign(where, assigneeFilter);
+  }
+
+  const tasks = await Task.findAll({
     where,
-    include: { stage: true, priority: true, assignments: { include: { employee: true } }, updates: { orderBy: { update_date: 'desc' }, take: 1 } },
-    orderBy: { created_at: 'desc' }
+    include: includeForBoard,
+    order:   [['created_at', 'DESC']],
+    subQuery: false,
   });
-  res.json(tasks);
+
+  // Group by stage
+  const allStages = await WorkflowStage.findAll({ order: [['step_order', 'ASC']] });
+  const grouped = {};
+  allStages.forEach(s => { grouped[s.stage_name] = []; });
+  tasks.forEach(t => {
+    const sn = t.stage?.stage_name || 'Pending';
+    if (grouped[sn]) grouped[sn].push(t);
+  });
+
+  // For the filter bar (admin/manager only)
+  const depts = req.user.role !== 'Employee'
+    ? await Employee.findAll({ where: { is_deleted: false }, attributes: ['employee_id', 'first_name', 'last_name'], order: [['first_name', 'ASC']] })
+    : [];
+
+  const canManage = req.user.role !== 'Employee';
+  const basePath  = req.user.role === 'Administrator' ? '/admin'
+                  : req.user.role === 'Manager'       ? '/manager'
+                  : '/employee';
+
+  res.render('tasks/board', {
+    role: req.user.role, basePath, user: req.user,
+    currentPath: `${basePath}/tasks`,
+    grouped, allStages, STAGE_COLORS,
+    canManage,
+    employees: depts,
+    priorities: PRIORITIES,
+    query: { search: search || '', priority_id: priority_id || '', stage_id: stage_id || '', employee_id: employee_id || '' },
+  });
 };
 
-const show = async (req, res) => {
-  const task = await prisma.task.findUnique({ where: { task_id: +req.params.id }, include: taskInclude });
-  if (!task || task.is_deleted) return res.status(404).json({ error: 'Task not found.' });
-  res.json(task);
+// ── NEW FORM ──────────────────────────────────────────────────────────────────
+const newForm = async (req, res) => {
+  const formData = await loadFormData();
+  const basePath = req.user.role === 'Administrator' ? '/admin' : '/manager';
+  res.render('tasks/new', {
+    role: req.user.role, basePath, user: req.user,
+    currentPath: `${basePath}/tasks`,
+    ...formData,
+    formValues: { task_title: '', task_description: '', priority_id: '', start_date: '', due_date: '', employee_ids: [] },
+    error: null,
+  });
 };
 
+// ── CREATE ────────────────────────────────────────────────────────────────────
 const store = async (req, res) => {
-  const { task_title, task_description, priority_id, start_date, due_date, employee_ids } = req.body;
-  const ids = Array.isArray(employee_ids) ? employee_ids.map(Number) : JSON.parse(employee_ids || '[]');
+  const { task_title, task_description, priority_id, start_date, due_date } = req.body;
+  // employee_ids comes as array or comma-separated string
+  const rawIds = req.body.employee_ids;
+  const employee_ids = Array.isArray(rawIds)
+    ? rawIds.map(Number)
+    : rawIds ? String(rawIds).split(',').map(Number).filter(Boolean) : [];
 
-  const pendingStage = await prisma.workflowStage.findFirst({ where: { stage_name: 'Pending' } });
+  const basePath = req.user.role === 'Administrator' ? '/admin' : '/manager';
 
-  const task = await prisma.task.create({
-    data: {
-      stage_id: pendingStage.stage_id,
-      task_title, task_description,
-      priority_id: +priority_id,
-      start_date:  start_date ? new Date(start_date) : null,
-      due_date:    new Date(due_date),
-      created_by_user_id: req.user.id,
-    }
+  const formData   = await loadFormData();
+  const renderError = (msg) => res.status(422).render('tasks/new', {
+    role: req.user.role, basePath, user: req.user,
+    currentPath: `${basePath}/tasks`,
+    ...formData,
+    formValues: { ...req.body, employee_ids },
+    error: msg,
   });
 
-  // Stage history
-  await prisma.taskStageHistory.create({
-    data: { task_id: task.task_id, changed_by_user_id: req.user.id, new_stage_id: pendingStage.stage_id, remarks: 'Task created.' }
+  // ── Validation ──
+  if (!task_title || !task_title.trim())  return renderError('Task title is required.');
+  if (!priority_id)                        return renderError('Priority is required.');
+  if (!due_date)                           return renderError('Due date is required.');
+  if (start_date && due_date && new Date(start_date) > new Date(due_date)) {
+    return renderError('Start date cannot be after the due date.');
+  }
+
+  const pendingStage = await WorkflowStage.findOne({ where: { stage_name: 'Pending' } });
+
+  const task = await Task.create({
+    stage_id:           pendingStage.stage_id,
+    task_title:         task_title.trim(),
+    task_description:   task_description || null,
+    priority_id:        +priority_id,
+    start_date:         start_date  ? new Date(start_date)  : null,
+    due_date:           new Date(due_date),
+    created_by_user_id: req.user.id,
   });
 
-  // Assignments
+  // Stage history — "Task created." (original message)
+  await TaskStageHistory.create({
+    task_id:            task.task_id,
+    changed_by_user_id: req.user.id,
+    new_stage_id:       pendingStage.stage_id,
+    remarks:            'Task created.',
+  });
+
+  // Assignments + notifications
   const notifyUserIds = [];
-  for (const empId of ids) {
-    await prisma.taskAssignment.create({ data: { task_id: task.task_id, employee_id: empId, assigned_by_user_id: req.user.id } });
-    const emp = await prisma.employee.findUnique({ where: { employee_id: empId }, include: { user: true } });
+  for (const empId of employee_ids) {
+    await TaskAssignment.create({
+      task_id:             task.task_id,
+      employee_id:         empId,
+      assigned_by_user_id: req.user.id,
+    });
+    const emp = await Employee.findOne({
+      where:   { employee_id: empId },
+      include: [{ model: User, as: 'user' }],
+    });
     if (emp?.user) notifyUserIds.push(emp.user.id);
   }
 
-  // File attachments
-  if (req.files?.length) {
+  // File attachments uploaded with the form
+  if (req.files && req.files.length) {
     for (const file of req.files) {
-      await prisma.attachment.create({
-        data: { task_id: task.task_id, uploaded_by_user_id: req.user.id, file_name: file.originalname, file_path: `uploads/${file.filename}`, file_type: file.originalname.split('.').pop() }
+      await Attachment.create({
+        task_id:             task.task_id,
+        uploaded_by_user_id: req.user.id,
+        file_name:           file.originalname,
+        file_path:           `uploads/${file.filename}`,
+        file_type:           file.originalname.split('.').pop(),
       });
     }
   }
 
   if (notifyUserIds.length) {
-    await send(notifyUserIds, 'assignment', 'New Task Assigned', `You have been assigned: "${task_title}".`, task.task_id, req.user.id);
+    await send(
+      notifyUserIds,
+      'assignment',
+      'New Task Assigned',
+      `You have been assigned: "${task_title}".`,
+      task.task_id,
+      req.user.id,
+    );
   }
 
   await log(req.user.id, 'assignment', `Created task: ${task_title}`, 'tasks', task.task_id);
-  res.status(201).json(task);
+  setFlash(res, 'success', 'Task created.');
+  return res.redirect(`${basePath}/tasks`);
 };
 
+// ── SHOW ──────────────────────────────────────────────────────────────────────
+const show = async (req, res) => {
+  const id    = +req.params.id;
+  const task  = await Task.findOne({
+    where:   { task_id: id, is_deleted: false },
+    include: taskInclude,
+    order:   [
+      [{ model: TaskUpdate,       as: 'updates'      }, 'update_date', 'DESC'],
+      [{ model: TaskStageHistory, as: 'stageHistory' }, 'changed_at',  'DESC'],
+      [{ model: TaskComment,      as: 'comments'     }, 'created_at',  'ASC' ],
+      [{ model: Approval,         as: 'approvals'    }, 'requested_at','DESC'],
+    ],
+  });
+
+  if (!task) return res.status(404).render('errors/404');
+
+  // Employees may only view tasks assigned to them
+  if (req.user.role === 'Employee') {
+    const assigned = task.assignments.some(a => a.employee_id === +req.user.employeeId);
+    if (!assigned) return res.status(404).render('errors/404');
+  }
+
+  const basePath  = req.user.role === 'Administrator' ? '/admin'
+                  : req.user.role === 'Manager'       ? '/manager'
+                  : '/employee';
+  const canManage = req.user.role !== 'Employee';
+
+  res.render('tasks/show', {
+    role: req.user.role, basePath, user: req.user,
+    currentPath: `${basePath}/tasks`,
+    task, canManage,
+  });
+};
+
+// ── EDIT FORM ─────────────────────────────────────────────────────────────────
+const editForm = async (req, res) => {
+  const task = await Task.findOne({
+    where:   { task_id: +req.params.id, is_deleted: false },
+    include: [
+      { model: TaskAssignment, as: 'assignments' },
+      { model: WorkflowStage,  as: 'stage' },
+    ],
+  });
+  if (!task) return res.status(404).render('errors/404');
+
+  const basePath = req.user.role === 'Administrator' ? '/admin' : '/manager';
+  const formData = await loadFormData();
+
+  res.render('tasks/edit', {
+    role: req.user.role, basePath, user: req.user,
+    currentPath: `${basePath}/tasks`,
+    ...formData,
+    task,
+    formValues: {
+      task_title:       task.task_title,
+      task_description: task.task_description || '',
+      priority_id:      String(task.priority_id),
+      start_date:       task.start_date ? String(task.start_date).split('T')[0] : '',
+      due_date:         task.due_date   ? String(task.due_date).split('T')[0]   : '',
+      employee_ids:     task.assignments.map(a => a.employee_id),
+    },
+    error: null,
+  });
+};
+
+// ── UPDATE ────────────────────────────────────────────────────────────────────
 const update = async (req, res) => {
-  const { task_title, task_description, priority_id, start_date, due_date, employee_ids } = req.body;
-  const task = await prisma.task.findUnique({ where: { task_id: +req.params.id }, include: { assignments: true } });
-  if (!task || task.is_deleted) return res.status(404).json({ error: 'Not found.' });
+  const id = +req.params.id;
+  const { task_title, task_description, priority_id, start_date, due_date } = req.body;
+  const rawIds = req.body.employee_ids;
+  const employee_ids = Array.isArray(rawIds)
+    ? rawIds.map(Number)
+    : rawIds ? String(rawIds).split(',').map(Number).filter(Boolean) : [];
 
-  const updated = await prisma.task.update({
-    where: { task_id: +req.params.id },
-    data: { task_title, task_description, priority_id: +priority_id, start_date: start_date ? new Date(start_date) : null, due_date: new Date(due_date), updated_by_user_id: req.user.id }
+  const task = await Task.findOne({
+    where:   { task_id: id, is_deleted: false },
+    include: [{ model: TaskAssignment, as: 'assignments' }],
+  });
+  if (!task) return res.status(404).render('errors/404');
+
+  const basePath = req.user.role === 'Administrator' ? '/admin' : '/manager';
+  const formData = await loadFormData();
+  const renderError = (msg) => res.status(422).render('tasks/edit', {
+    role: req.user.role, basePath, user: req.user,
+    currentPath: `${basePath}/tasks`,
+    ...formData, task,
+    formValues: { ...req.body, employee_ids },
+    error: msg,
   });
 
-  // Sync assignments
-  if (employee_ids) {
-    const newIds = (Array.isArray(employee_ids) ? employee_ids : JSON.parse(employee_ids)).map(Number);
-    const existing = task.assignments.map(a => a.employee_id);
-    const toRemove = existing.filter(id => !newIds.includes(id));
-    const toAdd    = newIds.filter(id => !existing.includes(id));
-    if (toRemove.length) await prisma.taskAssignment.deleteMany({ where: { task_id: task.task_id, employee_id: { in: toRemove } } });
-    for (const empId of toAdd) {
-      await prisma.taskAssignment.create({ data: { task_id: task.task_id, employee_id: empId, assigned_by_user_id: req.user.id } });
-    }
+  if (!task_title || !task_title.trim())  return renderError('Task title is required.');
+  if (!priority_id)                        return renderError('Priority is required.');
+  if (!due_date)                           return renderError('Due date is required.');
+  if (start_date && due_date && new Date(start_date) > new Date(due_date)) {
+    return renderError('Start date cannot be after the due date.');
   }
 
-  await log(req.user.id, 'update', `Updated task: ${task_title}`, 'tasks', +req.params.id);
-  res.json(updated);
+  // Whitelist — only these fields updated
+  await task.update({
+    task_title:         task_title.trim(),
+    task_description:   task_description || null,
+    priority_id:        +priority_id,
+    start_date:         start_date ? new Date(start_date) : null,
+    due_date:           new Date(due_date),
+    updated_by_user_id: req.user.id,
+  });
+
+  // Sync assignments — same logic as original
+  const existing = task.assignments.map(a => a.employee_id);
+  const toRemove = existing.filter(eid => !employee_ids.includes(eid));
+  const toAdd    = employee_ids.filter(eid => !existing.includes(eid));
+
+  if (toRemove.length) {
+    await TaskAssignment.destroy({
+      where: { task_id: id, employee_id: { [Op.in]: toRemove } },
+    });
+  }
+  for (const empId of toAdd) {
+    await TaskAssignment.create({
+      task_id:             id,
+      employee_id:         empId,
+      assigned_by_user_id: req.user.id,
+    });
+  }
+
+  await log(req.user.id, 'update', `Updated task: ${task_title}`, 'tasks', id);
+  setFlash(res, 'success', 'Task updated.');
+  return res.redirect(`${basePath}/tasks/${id}`);
 };
 
+// ── DESTROY (soft delete) ─────────────────────────────────────────────────────
 const destroy = async (req, res) => {
-  await prisma.task.update({ where: { task_id: +req.params.id }, data: { is_deleted: true } });
-  await log(req.user.id, 'delete', `Deleted task id ${req.params.id}`, 'tasks', +req.params.id);
-  res.json({ message: 'Task deleted.' });
+  const id       = +req.params.id;
+  const basePath = req.user.role === 'Administrator' ? '/admin' : '/manager';
+  await Task.update({ is_deleted: true }, { where: { task_id: id } });
+  await log(req.user.id, 'delete', `Deleted task id ${id}`, 'tasks', id);
+  setFlash(res, 'success', 'Task deleted.');
+  return res.redirect(`${basePath}/tasks`);
 };
 
-const changeStage = async (req, res) => {
-  const { stage_id, remarks } = req.body;
-  const task = await prisma.task.findUnique({ where: { task_id: +req.params.id }, include: { assignments: { include: { employee: { include: { user: true } } } } } });
-  const old  = task.stage_id;
-  await prisma.task.update({ where: { task_id: +req.params.id }, data: { stage_id: +stage_id, updated_by_user_id: req.user.id } });
-  await prisma.taskStageHistory.create({ data: { task_id: +req.params.id, changed_by_user_id: req.user.id, old_stage_id: old, new_stage_id: +stage_id, remarks } });
-  const stage = await prisma.workflowStage.findUnique({ where: { stage_id: +stage_id } });
-  const uids  = task.assignments.map(a => a.employee?.user?.id).filter(Boolean);
-  if (uids.length) await send(uids, 'status', 'Task Stage Updated', `Task "${task.task_title}" moved to ${stage.stage_name}.`, +req.params.id, req.user.id);
-  await log(req.user.id, 'update', `Changed task ${req.params.id} to ${stage.stage_name}`, 'tasks', +req.params.id);
-  res.json({ message: `Stage changed to ${stage.stage_name}.` });
-};
-
-const approve = async (req, res) => {
-  const { approval_status, remarks } = req.body;
-  const task = await prisma.task.findUnique({ where: { task_id: +req.params.id }, include: { assignments: { include: { employee: { include: { user: true } } } } } });
-
-  await prisma.approval.create({ data: { task_id: +req.params.id, approver_user_id: req.user.id, approval_status, remarks, approval_date: new Date() } });
-
-  const stageName  = approval_status === 'Approved' ? 'Completed' : 'In Progress';
-  const newStage   = await prisma.workflowStage.findFirst({ where: { stage_name: stageName } });
-  await prisma.task.update({ where: { task_id: +req.params.id }, data: { stage_id: newStage.stage_id, updated_by_user_id: req.user.id } });
-  await prisma.taskStageHistory.create({ data: { task_id: +req.params.id, changed_by_user_id: req.user.id, old_stage_id: task.stage_id, new_stage_id: newStage.stage_id, remarks: approval_status === 'Approved' ? 'Approved.' : 'Returned for revision.' } });
-
-  const uids = task.assignments.map(a => a.employee?.user?.id).filter(Boolean);
-  if (uids.length) await send(uids, 'approval', 'Task Review Decision', `Task "${task.task_title}": ${approval_status}.${remarks ? ` Remarks: ${remarks}` : ''}`, +req.params.id, req.user.id);
-  await log(req.user.id, 'approval', `Reviewed task ${req.params.id}: ${approval_status}`, 'tasks', +req.params.id);
-  res.json({ message: `Task ${approval_status}.` });
-};
-
-const submitForReview = async (req, res) => {
-  const task     = await prisma.task.findUnique({ where: { task_id: +req.params.id } });
-  const stage    = await prisma.workflowStage.findFirst({ where: { stage_name: 'For Review' } });
-  const oldStage = task.stage_id;
-  await prisma.task.update({ where: { task_id: +req.params.id }, data: { stage_id: stage.stage_id, updated_by_user_id: req.user.id } });
-  await prisma.taskStageHistory.create({ data: { task_id: +req.params.id, changed_by_user_id: req.user.id, old_stage_id: oldStage, new_stage_id: stage.stage_id, remarks: 'Submitted for review.' } });
-  await send(task.created_by_user_id, 'approval', 'Task Ready for Review', `Task "${task.task_title}" was submitted for review.`, +req.params.id, req.user.id);
-  await log(req.user.id, 'update', `Submitted task ${req.params.id} for review`, 'tasks', +req.params.id);
-  res.json({ message: 'Submitted for review.' });
-};
-
-const postProgress = async (req, res) => {
-  const { update_message, progress_percent } = req.body;
-  const task = await prisma.task.findUnique({ where: { task_id: +req.params.id } });
-
-  await prisma.taskUpdate.create({ data: { task_id: +req.params.id, employee_id: +req.user.employeeId, update_message, progress_percent: +progress_percent } });
-
-  // Auto-move to In Progress if still Pending
-  const pending    = await prisma.workflowStage.findFirst({ where: { stage_name: 'Pending' } });
-  const inProgress = await prisma.workflowStage.findFirst({ where: { stage_name: 'In Progress' } });
-  if (task.stage_id === pending.stage_id) {
-    await prisma.task.update({ where: { task_id: +req.params.id }, data: { stage_id: inProgress.stage_id } });
-    await prisma.taskStageHistory.create({ data: { task_id: +req.params.id, changed_by_user_id: req.user.id, old_stage_id: pending.stage_id, new_stage_id: inProgress.stage_id, remarks: 'Progress update posted.' } });
-  }
-
-  await log(req.user.id, 'update', `Posted progress on task ${req.params.id}`, 'task_updates', +req.params.id);
-  res.json({ message: 'Progress saved.' });
-};
-
-const addComment = async (req, res) => {
-  const comment = await prisma.taskComment.create({ data: { task_id: +req.params.id, user_id: req.user.id, comment_text: req.body.comment_text } });
-  res.status(201).json(comment);
-};
-
-const deleteComment = async (req, res) => {
-  await prisma.taskComment.update({ where: { comment_id: +req.params.cid }, data: { is_deleted: true } });
-  res.json({ message: 'Comment removed.' });
-};
-
-const uploadAttachment = async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'No file provided.' });
-  const att = await prisma.attachment.create({
-    data: { task_id: +req.params.id, uploaded_by_user_id: req.user.id, file_name: req.file.originalname, file_path: `uploads/${req.file.filename}`, file_type: req.file.originalname.split('.').pop() }
-  });
-  res.status(201).json(att);
-};
-
-module.exports = { index, show, store, update, destroy, changeStage, approve, submitForReview, postProgress, addComment, deleteComment, uploadAttachment };
+module.exports = { board, newForm, store, show, editForm, update, destroy };
