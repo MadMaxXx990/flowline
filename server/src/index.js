@@ -16,6 +16,7 @@ const morgan         = require('morgan');
 const path           = require('path');
 const cookieParser   = require('cookie-parser');
 const methodOverride = require('method-override');
+const { flashMiddleware } = require('./middleware/flash');
 
 const app = express();
 
@@ -24,13 +25,14 @@ app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
 // ── Middleware ────────────────────────────────────────────────────────────────
-app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' }, contentSecurityPolicy: false }));
 app.use(cors({ origin: process.env.CLIENT_URL, credentials: true }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan('dev'));
 app.use(cookieParser(process.env.COOKIE_SECRET || process.env.JWT_SECRET));
 app.use(methodOverride('_method'));
+app.use(flashMiddleware);
 
 // ── Static assets ─────────────────────────────────────────────────────────────
 // Serve our own CSS/JS from public/
@@ -42,8 +44,13 @@ app.use('/vendor/chart.js',         express.static(path.join(__dirname, '..', 'n
 
 // ── Static uploads ── removed: files are served through the authenticated /api/files route ──
 
-// ── Routes ────────────────────────────────────────────────────────────────────
-app.use('/api/auth',          require('./routes/auth'));
+// ── Page routes (EJS) ─────────────────────────────────────────────────────────
+app.use('/',          require('./routes/auth'));
+app.use('/admin',     require('./routes/admin'));
+app.use('/manager',   require('./routes/manager'));
+app.use('/employee',  require('./routes/employee'));
+
+// ── API routes (JSON — kept for Phase 8 removal) ──────────────────────────────
 app.use('/api/employees',     require('./routes/employees'));
 app.use('/api/departments',   require('./routes/departments'));
 app.use('/api/teams',         require('./routes/teams'));
@@ -59,8 +66,13 @@ app.use('/api/dashboard',     require('./routes/dashboard'));
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/api/health', (_, res) => res.json({ status: 'ok', timestamp: new Date() }));
 
-// ── 404 ───────────────────────────────────────────────────────────────────────
-app.use((_, res) => res.status(404).json({ error: 'Route not found' }));
+// ── 404 — API paths return JSON; page paths render the 404 view ───────────────
+app.use((req, res) => {
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({ error: 'Route not found' });
+  }
+  return res.status(404).render('errors/404');
+});
 
 // ── Error handler ─────────────────────────────────────────────────────────────
 app.use((err, _req, res, _next) => {

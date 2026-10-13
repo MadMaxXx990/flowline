@@ -1,0 +1,7 @@
+<% if (locals.flash && locals.flash.message) { %>
+<div class="alert alert-<%= locals.flash.type || 'info' %> alert-dismissible fade show d-flex align-items-center gap-2 py-2 small mb-4" role="alert">
+  <i class="bi bi-<%= locals.flash.type === 'success' ? 'check-circle-fill' : locals.flash.type === 'danger' ? 'exclamation-circle-fill' : 'info-circle-fill' %>"></i>
+  <%- locals.flash.message %>
+  <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert" aria-label="Close"></button>
+</div>
+<% } %>

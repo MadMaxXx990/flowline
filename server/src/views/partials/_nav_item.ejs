@@ -1,0 +1,14 @@
+<%
+  const _isActive = cur === href;
+%>
+<a href="<%= href %>"
+   class="nav-link d-flex align-items-center gap-2 px-3 py-2 rounded-0 text-decoration-none"
+   style="color:<%- _isActive ? '#fff' : 'rgba(255,255,255,.65)' %>;background:<%- _isActive ? 'rgba(255,255,255,.09)' : 'transparent' %>;border-left:<%- _isActive ? '3px solid #4f46e5' : '3px solid transparent' %>;font-size:.875rem;transition:all .15s;">
+  <i class="bi <%= icon %>" style="width:18px;text-align:center;font-size:1rem;"></i>
+  <span><%= label %></span>
+  <% if (badge > 0) { %>
+    <span class="badge bg-danger ms-auto rounded-pill" style="font-size:.6rem;">
+      <%= badge > 9 ? '9+' : badge %>
+    </span>
+  <% } %>
+</a>

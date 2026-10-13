@@ -1,144 +1,247 @@
-const bcrypt = require('bcryptjs');
-const jwt    = require('jsonwebtoken');
-const crypto = require('crypto');
-const prisma  = require('../lib/prisma');
-const { log } = require('../lib/activityLog');
+'use strict';
+const bcrypt  = require('bcryptjs');
+const jwt     = require('jsonwebtoken');
+const crypto  = require('crypto');
+const { Op }  = require('sequelize');
+const { User, Employee, Role, Notification } = require('../models');
+const { log }            = require('../lib/activityLog');
 const { clearLoginLimit } = require('../middleware/rateLimit');
+const { setFlash }        = require('../middleware/flash');
 
-// ── Login ─────────────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+const ROLE_DASHBOARD = {
+  Administrator: '/admin/dashboard',
+  Manager:       '/manager/dashboard',
+  Employee:      '/employee/dashboard',
+};
+
+/**
+ * Set the JWT cookie. httpOnly + sameSite=lax always; secure only in production.
+ * Lifetime matches JWT_EXPIRES_IN (default 8 h → 28800 s).
+ */
+const setTokenCookie = (res, token) => {
+  const expiresIn = process.env.JWT_EXPIRES_IN || '8h';
+  // Parse "8h" / "1d" / raw-number-seconds into milliseconds
+  const ms = (() => {
+    if (typeof expiresIn === 'number') return expiresIn * 1000;
+    const match = String(expiresIn).match(/^(\d+)([smhd])$/);
+    if (!match) return 8 * 60 * 60 * 1000;
+    const n = parseInt(match[1], 10);
+    return { s: 1, m: 60, h: 3600, d: 86400 }[match[2]] * n * 1000;
+  })();
+  res.cookie('fl_token', token, {
+    httpOnly: true,
+    sameSite: 'lax',
+    path:     '/',
+    maxAge:   ms,
+    secure:   process.env.NODE_ENV === 'production',
+  });
+};
+
+// ── GET /login ────────────────────────────────────────────────────────────────
+const loginForm = (req, res) => {
+  // If already authenticated redirect to their dashboard
+  const token = req.cookies && req.cookies.fl_token;
+  if (token) {
+    try {
+      const payload = jwt.verify(token, process.env.JWT_SECRET);
+      const dest = ROLE_DASHBOARD[payload.role] || '/login';
+      return res.redirect(dest);
+    } catch { /* expired / invalid — fall through to render */ }
+  }
+  res.render('auth/login', { error: null, username: '' });
+};
+
+// ── POST /login ───────────────────────────────────────────────────────────────
 const login = async (req, res) => {
   const { username, password } = req.body;
-  if (!username || !password) return res.status(400).json({ error: 'Username and password are required.' });
 
-  const user = await prisma.user.findFirst({
+  if (!username || !password) {
+    return res.status(400).render('auth/login', {
+      error: 'Username and password are required.',
+      username: username || '',
+    });
+  }
+
+  const user = await User.findOne({
     where: { username, is_deleted: false },
-    include: { role: true, employee: true }
+    include: [
+      { model: Role,     as: 'role' },
+      { model: Employee, as: 'employee' },
+    ],
   });
 
-  if (!user) return res.status(401).json({ error: 'Invalid credentials.' });
-  if (user.status === 'inactive') return res.status(403).json({ error: 'Account deactivated. Contact an administrator.' });
+  if (!user) {
+    return res.status(401).render('auth/login', {
+      error: 'Invalid credentials.',
+      username,
+    });
+  }
+
+  if (user.status === 'inactive') {
+    return res.status(403).render('auth/login', {
+      error: 'Account deactivated. Contact an administrator.',
+      username,
+    });
+  }
 
   const valid = await bcrypt.compare(password, user.password);
   if (!valid) {
-    await prisma.user.update({ where: { id: user.id }, data: { failed_login_attempts: { increment: 1 } } });
-    return res.status(401).json({ error: 'Invalid credentials.' });
+    await user.increment('failed_login_attempts');
+    return res.status(401).render('auth/login', {
+      error: 'Invalid credentials.',
+      username,
+    });
   }
 
-  await prisma.user.update({
-    where: { id: user.id },
-    data: { last_login: new Date(), failed_login_attempts: 0 }
-  });
+  // Successful login
+  await user.update({ last_login: new Date(), failed_login_attempts: 0 });
   clearLoginLimit(req.ip, username);
   await log(user.id, 'login', 'User logged in.', 'users', user.id);
 
-  const payload = { id: user.id, role: user.role?.role_name, employeeId: user.employee_id };
-  const token   = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN });
-
-  res.json({
-    token,
-    user: {
-      id:         user.id,
-      username:   user.username,
-      role:       user.role?.role_name,
-      name:       user.employee ? `${user.employee.first_name} ${user.employee.last_name}` : user.username,
-      employeeId: user.employee_id,
-    }
+  const payload = {
+    id:         user.id,
+    role:       user.role?.role_name,
+    employeeId: user.employee_id,
+  };
+  const token = jwt.sign(payload, process.env.JWT_SECRET, {
+    expiresIn: process.env.JWT_EXPIRES_IN || '8h',
   });
+
+  setTokenCookie(res, token);
+
+  const dest = ROLE_DASHBOARD[payload.role] || '/login';
+  return res.redirect(dest);
 };
 
-// ── Me ────────────────────────────────────────────────────────────────────────
-const me = async (req, res) => {
-  const user = await prisma.user.findUnique({
-    where: { id: req.user.id },
-    include: { role: true, employee: { include: { department: true, position: true } } }
-  });
-  if (!user) return res.status(404).json({ error: 'User not found.' });
-
-  const unread = await prisma.notification.count({ where: { user_id: user.id, is_read: false } });
-
-  res.json({
-    id:          user.id,
-    username:    user.username,
-    role:        user.role?.role_name,
-    name:        user.employee ? `${user.employee.first_name} ${user.employee.last_name}` : user.username,
-    employeeId:  user.employee_id,
-    employee:    user.employee,
-    unreadCount: unread,
-  });
-};
-
-// ── Logout ────────────────────────────────────────────────────────────────────
+// ── POST /logout ──────────────────────────────────────────────────────────────
 const logout = async (req, res) => {
-  await log(req.user.id, 'logout', 'User logged out.', 'users', req.user.id);
-  res.json({ message: 'Logged out.' });
+  if (req.user) {
+    await log(req.user.id, 'logout', 'User logged out.', 'users', req.user.id);
+  }
+  res.clearCookie('fl_token', { path: '/' });
+  return res.redirect('/login');
 };
 
-// ── Forgot Password ───────────────────────────────────────────────────────────
-// Generates a reset token and stores it with a 1-hour expiry.
-// In production you would email the link; here we return the token directly
-// so it can be demonstrated without an SMTP server.
-const forgotPassword = async (req, res) => {
+// ── GET /forgot-password ──────────────────────────────────────────────────────
+const forgotForm = (_req, res) => {
+  res.render('auth/forgot', { error: null, result: null, username: '' });
+};
+
+// ── POST /forgot-password ─────────────────────────────────────────────────────
+// Generates a random token, stores it plain in reset_token with a 1-hour expiry,
+// and returns it in the response for thesis-demo purposes (same behaviour as before).
+const forgot = async (req, res) => {
   const { username } = req.body;
-  if (!username) return res.status(400).json({ error: 'Username is required.' });
 
-  const user = await prisma.user.findFirst({ where: { username, is_deleted: false } });
+  if (!username) {
+    return res.status(400).render('auth/forgot', {
+      error: 'Username is required.',
+      result: null,
+      username: '',
+    });
+  }
 
-  // Always return the same message to prevent username enumeration
   const safeMsg = 'If that username exists, a reset token has been generated.';
 
-  if (!user) return res.json({ message: safeMsg });
+  const user = await User.findOne({ where: { username, is_deleted: false } });
+  if (!user) {
+    // Always show the same message — prevents username enumeration
+    return res.render('auth/forgot', {
+      error: null,
+      result: { message: safeMsg, demo_token: null, demo_note: null },
+      username,
+    });
+  }
 
-  // Generate a cryptographically random token
   const token   = crypto.randomBytes(32).toString('hex');
-  const expires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour from now
+  const expires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
-  await prisma.user.update({
-    where: { id: user.id },
-    data: { reset_token: token, reset_expires: expires }
-  });
-
+  await user.update({ reset_token: token, reset_expires: expires });
   await log(user.id, 'password_reset_request', 'Password reset requested.', 'users', user.id);
 
-  // In a real deployment: send email with link containing the token.
-  // For demo/thesis purposes the token is returned in the response so it
-  // can be copy-pasted into the Reset Password form.
-  res.json({
-    message: safeMsg,
-    // Remove the line below in production — only here for thesis demonstration
-    demo_token: token,
-    demo_note:  'In production this token would be emailed. Copy it to use the reset form.'
+  return res.render('auth/forgot', {
+    error: null,
+    result: {
+      message:    safeMsg,
+      // Token returned for thesis-demo — remove in production
+      demo_token: token,
+      demo_note:  'In production this token would be emailed. Copy it to use the reset form.',
+    },
+    username,
   });
 };
 
-// ── Reset Password ────────────────────────────────────────────────────────────
-const resetPassword = async (req, res) => {
-  const { token, new_password } = req.body;
-  if (!token || !new_password) return res.status(400).json({ error: 'Token and new password are required.' });
-  if (new_password.length < 6)  return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+// ── GET /reset-password ───────────────────────────────────────────────────────
+const resetForm = (req, res) => {
+  res.render('auth/reset', { error: null, success: false, token: req.query.token || '' });
+};
 
-  const user = await prisma.user.findFirst({
+// ── POST /reset-password ──────────────────────────────────────────────────────
+const reset = async (req, res) => {
+  const { token, new_password, confirm } = req.body;
+
+  if (!token || !new_password) {
+    return res.status(400).render('auth/reset', {
+      error: 'Token and new password are required.',
+      success: false,
+      token: token || '',
+    });
+  }
+  if (new_password.length < 6) {
+    return res.status(400).render('auth/reset', {
+      error: 'Password must be at least 6 characters.',
+      success: false,
+      token,
+    });
+  }
+  if (confirm && new_password !== confirm) {
+    return res.status(400).render('auth/reset', {
+      error: 'Passwords do not match.',
+      success: false,
+      token,
+    });
+  }
+
+  const user = await User.findOne({
     where: {
       reset_token:   token,
-      reset_expires: { gt: new Date() }, // token must not be expired
+      reset_expires: { [Op.gt]: new Date() },
       is_deleted:    false,
-    }
+    },
   });
 
-  if (!user) return res.status(400).json({ error: 'Invalid or expired reset token.' });
+  if (!user) {
+    return res.status(400).render('auth/reset', {
+      error: 'Invalid or expired reset token.',
+      success: false,
+      token,
+    });
+  }
 
-  await prisma.user.update({
-    where: { id: user.id },
-    data: {
-      password:      await bcrypt.hash(new_password, 10),
-      reset_token:   null,
-      reset_expires: null,
-      failed_login_attempts: 0,
-    }
+  await user.update({
+    password:              await bcrypt.hash(new_password, 10),
+    reset_token:           null,
+    reset_expires:         null,
+    failed_login_attempts: 0,
   });
-
   await log(user.id, 'password_reset', 'Password was reset successfully.', 'users', user.id);
 
-  res.json({ message: 'Password updated. You can now log in.' });
+  setFlash(res, 'success', 'Password updated. You can now log in.');
+  return res.redirect('/login');
 };
 
-module.exports = { login, me, logout, forgotPassword, resetPassword };
+// ── GET / — root redirect ─────────────────────────────────────────────────────
+const rootRedirect = (req, res) => {
+  const token = req.cookies && req.cookies.fl_token;
+  if (token) {
+    try {
+      const payload = jwt.verify(token, process.env.JWT_SECRET);
+      return res.redirect(ROLE_DASHBOARD[payload.role] || '/login');
+    } catch { /* fall through */ }
+  }
+  return res.redirect('/login');
+};
+
+module.exports = { loginForm, login, logout, forgotForm, forgot, resetForm, reset, rootRedirect };

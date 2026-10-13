@@ -1,0 +1,94 @@
+<%
+  /* Passed in from every page render:
+       role     — 'Administrator' | 'Manager' | 'Employee'
+       basePath — '/admin' | '/manager' | '/employee'
+       user     — req.user JWT payload { id, role, employeeId }
+       unreadCount — integer (default 0 until Phase 6)
+  */
+  const _unread   = locals.unreadCount || 0;
+  const _initial  = (locals.displayName || locals.user && locals.user.username || '?')[0].toUpperCase();
+  const _name     = locals.displayName || (locals.user && locals.user.username) || '';
+  const _role     = locals.role || '';
+  const _base     = locals.basePath || '';
+  const _cur      = locals.currentPath || '';
+
+  function navCls(path) {
+    return _cur === path ? 'active' : '';
+  }
+%>
+<nav id="sidebar" style="position:fixed;top:0;left:0;width:250px;height:100vh;background:#1e1b4b;display:flex;flex-direction:column;z-index:1040;">
+
+  <!-- Brand -->
+  <div class="d-flex align-items-center gap-2 px-3 py-3 border-bottom" style="border-color:rgba(255,255,255,.08)!important;">
+    <div class="rounded-2 d-flex align-items-center justify-content-center" style="width:32px;height:32px;background:#4f46e5;">
+      <i class="bi bi-diagram-3-fill text-white" style="font-size:.9rem;"></i>
+    </div>
+    <span class="text-white fw-bold" style="font-size:1.05rem;">Flowline</span>
+  </div>
+
+  <!-- Scrollable nav -->
+  <div style="flex:1;overflow-y:auto;overflow-x:hidden;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.15) transparent;">
+
+    <% if (_role === 'Administrator') { %>
+      <%- include('_nav_section', { label: 'Main' }) %>
+      <%- include('_nav_item', { href: '/admin/dashboard',     icon: 'bi-speedometer2',        label: 'Dashboard',     badge: 0,       cur: _cur }) %>
+      <%- include('_nav_section', { label: 'Organization' }) %>
+      <%- include('_nav_item', { href: '/admin/employees',     icon: 'bi-people-fill',         label: 'Employees',     badge: 0,       cur: _cur }) %>
+      <%- include('_nav_item', { href: '/admin/departments',   icon: 'bi-building',            label: 'Departments',   badge: 0,       cur: _cur }) %>
+      <%- include('_nav_item', { href: '/admin/teams',         icon: 'bi-people',              label: 'Teams',         badge: 0,       cur: _cur }) %>
+      <%- include('_nav_item', { href: '/admin/positions',     icon: 'bi-briefcase-fill',      label: 'Positions',     badge: 0,       cur: _cur }) %>
+      <%- include('_nav_section', { label: 'Workflow' }) %>
+      <%- include('_nav_item', { href: '/admin/tasks',         icon: 'bi-kanban-fill',         label: 'Task Board',    badge: 0,       cur: _cur }) %>
+      <%- include('_nav_item', { href: '/admin/attendance',    icon: 'bi-calendar-check-fill', label: 'Attendance',    badge: 0,       cur: _cur }) %>
+      <%- include('_nav_item', { href: '/admin/files',         icon: 'bi-folder2-open',        label: 'Files',         badge: 0,       cur: _cur }) %>
+      <%- include('_nav_section', { label: 'Insights' }) %>
+      <%- include('_nav_item', { href: '/admin/reports',       icon: 'bi-bar-chart-fill',      label: 'Reports',       badge: 0,       cur: _cur }) %>
+      <%- include('_nav_item', { href: '/admin/activity-logs', icon: 'bi-journal-text',        label: 'Audit Log',     badge: 0,       cur: _cur }) %>
+      <%- include('_nav_item', { href: '/admin/notifications', icon: 'bi-bell-fill',           label: 'Notifications', badge: _unread, cur: _cur }) %>
+    <% } %>
+
+    <% if (_role === 'Manager') { %>
+      <%- include('_nav_section', { label: 'Main' }) %>
+      <%- include('_nav_item', { href: '/manager/dashboard',      icon: 'bi-speedometer2',        label: 'Dashboard',     badge: 0,       cur: _cur }) %>
+      <%- include('_nav_section', { label: 'Workflow' }) %>
+      <%- include('_nav_item', { href: '/manager/tasks',          icon: 'bi-kanban-fill',         label: 'Task Board',    badge: 0,       cur: _cur }) %>
+      <%- include('_nav_item', { href: '/manager/tasks/new',      icon: 'bi-plus-circle-fill',    label: 'Assign Task',   badge: 0,       cur: _cur }) %>
+      <%- include('_nav_item', { href: '/manager/attendance',     icon: 'bi-calendar-check-fill', label: 'Attendance',    badge: 0,       cur: _cur }) %>
+      <%- include('_nav_item', { href: '/manager/files',          icon: 'bi-folder2-open',        label: 'Files',         badge: 0,       cur: _cur }) %>
+      <%- include('_nav_section', { label: 'Insights' }) %>
+      <%- include('_nav_item', { href: '/manager/reports',        icon: 'bi-bar-chart-fill',      label: 'Reports',       badge: 0,       cur: _cur }) %>
+      <%- include('_nav_item', { href: '/manager/notifications',  icon: 'bi-bell-fill',           label: 'Notifications', badge: _unread, cur: _cur }) %>
+    <% } %>
+
+    <% if (_role === 'Employee') { %>
+      <%- include('_nav_section', { label: 'Main' }) %>
+      <%- include('_nav_item', { href: '/employee/dashboard',     icon: 'bi-speedometer2',        label: 'Dashboard',     badge: 0,       cur: _cur }) %>
+      <%- include('_nav_section', { label: 'My Work' }) %>
+      <%- include('_nav_item', { href: '/employee/tasks',         icon: 'bi-kanban-fill',         label: 'My Tasks',      badge: 0,       cur: _cur }) %>
+      <%- include('_nav_item', { href: '/employee/attendance',    icon: 'bi-calendar-check-fill', label: 'Attendance',    badge: 0,       cur: _cur }) %>
+      <%- include('_nav_item', { href: '/employee/files',         icon: 'bi-folder2-open',        label: 'Files',         badge: 0,       cur: _cur }) %>
+      <%- include('_nav_item', { href: '/employee/notifications', icon: 'bi-bell-fill',           label: 'Notifications', badge: _unread, cur: _cur }) %>
+    <% } %>
+
+  </div>
+
+  <!-- Footer: avatar + logout -->
+  <div class="p-3 d-flex align-items-center gap-2" style="border-top:1px solid rgba(255,255,255,.08);">
+    <div class="rounded-circle d-flex align-items-center justify-content-center fw-bold text-white flex-shrink-0"
+         style="width:34px;height:34px;background:#4f46e5;font-size:.8rem;">
+      <%= _initial %>
+    </div>
+    <div style="min-width:0;">
+      <div class="text-white fw-semibold text-truncate" style="font-size:.82rem;"><%= _name %></div>
+      <div style="font-size:.7rem;color:rgba(255,255,255,.45);"><%= _role %></div>
+    </div>
+    <!-- Logout: POST form to satisfy POST-only state-change rule -->
+    <form method="POST" action="/logout" class="ms-auto">
+      <button type="submit" class="btn btn-sm p-0 border-0 bg-transparent" title="Logout"
+              style="color:rgba(255,255,255,.4);">
+        <i class="bi bi-box-arrow-right fs-5"></i>
+      </button>
+    </form>
+  </div>
+
+</nav>
