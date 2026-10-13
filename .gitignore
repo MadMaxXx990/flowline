@@ -6,6 +6,10 @@ node_modules/
 server/.env
 client/.env
 
+# Uploaded files — keep the directory via .gitkeep
+server/uploads/*
+!server/uploads/.gitkeep
+
 # Build output
 dist/
 client/dist/

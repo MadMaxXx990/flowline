@@ -46,6 +46,8 @@ app.use(morgan('dev'));
 app.use(cookieParser(process.env.COOKIE_SECRET || process.env.JWT_SECRET));
 app.use(methodOverride('_method'));
 app.use(flashMiddleware);
+// Unread notification count — runs after authenticate sets req.user
+app.use(require('./middleware/unreadCount'));
 
 // ── Static assets ─────────────────────────────────────────────────────────────
 // Serve our own CSS/JS from public/
@@ -60,6 +62,8 @@ app.use('/vendor/chart.js',         express.static(path.join(__dirname, '..', 'n
 // ── Shared authenticated routes (any logged-in role) ─────────────────────────
 // Profile photo — available to any authenticated user, no role restriction
 app.get('/employees/:id/photo', require('./middleware/auth').authenticate, require('./controllers/employeeController').photo);
+// Attachment download — authenticated; permission check enforced in controller
+app.get('/attachments/:id/download', require('./middleware/auth').authenticate, require('./controllers/attachmentController').download);
 
 // ── Page routes (EJS) ─────────────────────────────────────────────────────────
 app.use('/',          require('./routes/auth'));
@@ -68,10 +72,9 @@ app.use('/manager',   require('./routes/manager'));
 app.use('/employee',  require('./routes/employee'));
 
 // ── API routes (JSON — kept for Phase 8 removal) ──────────────────────────────
-app.use('/api/employees',     require('./routes/employees'));
-app.use('/api/departments',   require('./routes/departments'));
-app.use('/api/teams',         require('./routes/teams'));
-app.use('/api/positions',     require('./routes/positions'));
+// /api/employees, /api/departments, /api/teams, /api/positions removed —
+// organisation management is now server-rendered (EJS). Old React client may
+// no longer function; react-prisma-final tag is the fallback.
 // /api/tasks removed — task pages are now server-rendered via /admin/tasks, /manager/tasks, /employee/tasks
 app.use('/api/attendance',    require('./routes/attendance'));
 app.use('/api/files',         require('./routes/files'));

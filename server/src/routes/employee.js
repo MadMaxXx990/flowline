@@ -2,6 +2,8 @@
 const router = require('express').Router();
 const { authenticate, authorize } = require('../middleware/auth');
 const taskC  = require('../controllers/taskController');
+const attC   = require('../controllers/attachmentController');
+const notifC = require('../controllers/notificationController');
 
 // All employee routes require authentication and the Employee role.
 router.use(authenticate, authorize('Employee'));
@@ -13,6 +15,14 @@ router.get('/dashboard', (req, res) => {
     currentPath: '/employee/dashboard',
   });
 });
+
+// ── Notifications ─────────────────────────────────────────────────────────────
+router.get('/notifications',             notifC.index);
+router.post('/notifications/read-all',   notifC.markAllRead);
+router.post('/notifications/:id/read',   notifC.markRead);
+
+// ── Files ─────────────────────────────────────────────────────────────────────
+router.get('/files', attC.filesIndex);
 
 // ── Tasks (read-only board + workflow actions) ────────────────────────────────
 // Employees see only tasks assigned to them (enforced in taskController.board / taskController.show)

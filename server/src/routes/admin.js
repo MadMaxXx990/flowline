@@ -8,6 +8,8 @@ const posC  = require('../controllers/positionController');
 const teamC = require('../controllers/teamController');
 const empC  = require('../controllers/employeeController');
 const taskC = require('../controllers/taskController');
+const attC  = require('../controllers/attachmentController');
+const notifC = require('../controllers/notificationController');
 
 // All admin routes require authentication and the Administrator role.
 router.use(authenticate, authorize('Administrator'));
@@ -19,6 +21,14 @@ router.get('/dashboard', (req, res) => {
     currentPath: '/admin/dashboard',
   });
 });
+
+// ── Notifications ─────────────────────────────────────────────────────────────
+router.get('/notifications',             notifC.index);
+router.post('/notifications/read-all',   notifC.markAllRead);
+router.post('/notifications/:id/read',   notifC.markRead);
+
+// ── Files ─────────────────────────────────────────────────────────────────────
+router.get('/files', attC.filesIndex);
 
 // ── Tasks ─────────────────────────────────────────────────────────────────────
 router.get('/tasks',               taskC.board);

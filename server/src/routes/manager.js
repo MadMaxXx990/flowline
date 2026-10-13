@@ -3,6 +3,8 @@ const router  = require('express').Router();
 const { authenticate, authorize } = require('../middleware/auth');
 const upload  = require('../middleware/upload');
 const taskC   = require('../controllers/taskController');
+const attC    = require('../controllers/attachmentController');
+const notifC  = require('../controllers/notificationController');
 
 // All manager routes require authentication and the Manager role.
 router.use(authenticate, authorize('Manager'));
@@ -14,6 +16,14 @@ router.get('/dashboard', (req, res) => {
     currentPath: '/manager/dashboard',
   });
 });
+
+// ── Notifications ─────────────────────────────────────────────────────────────
+router.get('/notifications',             notifC.index);
+router.post('/notifications/read-all',   notifC.markAllRead);
+router.post('/notifications/:id/read',   notifC.markRead);
+
+// ── Files ─────────────────────────────────────────────────────────────────────
+router.get('/files', attC.filesIndex);
 
 // ── Tasks ─────────────────────────────────────────────────────────────────────
 router.get('/tasks',            taskC.board);

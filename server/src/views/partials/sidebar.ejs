@@ -3,7 +3,7 @@
        role     — 'Administrator' | 'Manager' | 'Employee'
        basePath — '/admin' | '/manager' | '/employee'
        user     — req.user JWT payload { id, role, employeeId }
-       unreadCount — integer (default 0 until Phase 6)
+       unreadCount — integer (live count from unreadCount middleware)
   */
   const _unread   = locals.unreadCount || 0;
   const _initial  = (locals.displayName || locals.user && locals.user.username || '?')[0].toUpperCase();
