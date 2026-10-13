@@ -9,13 +9,19 @@ if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
   process.exit(1);
 }
 
-const express = require('express');
-const cors    = require('cors');
-const helmet  = require('helmet');
-const morgan  = require('morgan');
-const path    = require('path');
+const express        = require('express');
+const cors           = require('cors');
+const helmet         = require('helmet');
+const morgan         = require('morgan');
+const path           = require('path');
+const cookieParser   = require('cookie-parser');
+const methodOverride = require('method-override');
 
 const app = express();
+
+// ── View engine (EJS) ─────────────────────────────────────────────────────────
+app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, 'views'));
 
 // ── Middleware ────────────────────────────────────────────────────────────────
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
@@ -23,6 +29,16 @@ app.use(cors({ origin: process.env.CLIENT_URL, credentials: true }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan('dev'));
+app.use(cookieParser(process.env.COOKIE_SECRET || process.env.JWT_SECRET));
+app.use(methodOverride('_method'));
+
+// ── Static assets ─────────────────────────────────────────────────────────────
+// Serve our own CSS/JS from public/
+app.use(express.static(path.join(__dirname, 'public')));
+// Serve installed npm packages for Bootstrap, Bootstrap Icons and Chart.js
+app.use('/vendor/bootstrap',        express.static(path.join(__dirname, '..', 'node_modules', 'bootstrap', 'dist')));
+app.use('/vendor/bootstrap-icons',  express.static(path.join(__dirname, '..', 'node_modules', 'bootstrap-icons', 'font')));
+app.use('/vendor/chart.js',         express.static(path.join(__dirname, '..', 'node_modules', 'chart.js', 'dist')));
 
 // ── Static uploads ── removed: files are served through the authenticated /api/files route ──
 
@@ -55,9 +71,55 @@ app.use((err, _req, res, _next) => {
 const { runOverdueJob } = require('./jobs/overdueJob');
 const overdueIntervalMs = (parseInt(process.env.OVERDUE_CHECK_MINUTES) || 15) * 60 * 1000;
 
+// ── Sequelize model startup check (read-only — never alters tables) ───────────
+const {
+  sequelize,
+  Role, Department, Position, Team, Employee, User,
+  WorkflowStage, TaskPriority, Task, TaskAssignment, TaskUpdate,
+  TaskStageHistory, TaskComment, Approval, Attachment,
+  Notification, Attendance, ActivityLog,
+} = require('./models');
+
+async function checkModels() {
+  try {
+    await sequelize.authenticate();
+    console.log('[Sequelize] Connection established.');
+
+    const checks = [
+      ['roles',              () => Role.findOne()],
+      ['departments',        () => Department.findOne()],
+      ['positions',          () => Position.findOne()],
+      ['teams',              () => Team.findOne()],
+      ['employees',          () => Employee.findOne()],
+      ['users',              () => User.findOne()],
+      ['workflow_stages',    () => WorkflowStage.findOne()],
+      ['task_priorities',    () => TaskPriority.findOne()],
+      ['tasks',              () => Task.findOne()],
+      ['task_assignments',   () => TaskAssignment.findOne()],
+      ['task_updates',       () => TaskUpdate.findOne()],
+      ['task_stage_history', () => TaskStageHistory.findOne()],
+      ['task_comments',      () => TaskComment.findOne()],
+      ['approvals',          () => Approval.findOne()],
+      ['attachments',        () => Attachment.findOne()],
+      ['notifications',      () => Notification.findOne()],
+      ['attendance',         () => Attendance.findOne()],
+      ['activity_logs',      () => ActivityLog.findOne()],
+    ];
+
+    for (const [table, query] of checks) {
+      await query();
+      console.log(`[Sequelize] ✓ ${table}`);
+    }
+    console.log('[Sequelize] All 18 models OK.');
+  } catch (err) {
+    console.error('[Sequelize] Startup check failed:', err.message);
+  }
+}
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`Flowline API running on http://localhost:${PORT}`);
   runOverdueJob();
   setInterval(runOverdueJob, overdueIntervalMs);
+  checkModels();
 });

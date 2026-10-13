@@ -3,28 +3,36 @@
   "version": "1.0.0",
   "type": "commonjs",
   "scripts": {
-    "dev":   "nodemon src/index.js",
+    "dev": "nodemon src/index.js",
     "start": "node src/index.js",
-    "db:push":     "prisma db push",
+    "db:push": "prisma db push",
     "db:generate": "prisma generate",
-    "db:seed":     "node src/prisma/seed.js"
+    "db:seed": "node src/prisma/seed.js"
   },
   "dependencies": {
-    "@prisma/client":     "^5.22.0",
-    "bcryptjs":           "^2.4.3",
-    "cors":               "^2.8.5",
-    "dotenv":             "^16.4.5",
-    "express":            "^4.21.1",
-    "express-validator":  "^7.2.0",
-    "helmet":             "^8.0.0",
-    "jsonwebtoken":       "^9.0.2",
-    "multer":             "^1.4.5-lts.1",
-    "morgan":             "^1.10.0",
-    "pdfkit":             "^0.15.0",
-    "exceljs":            "^4.4.0"
+    "@prisma/client": "^5.22.0",
+    "bcryptjs": "^2.4.3",
+    "bootstrap": "5.3.8",
+    "bootstrap-icons": "1.13.2",
+    "chart.js": "4.5.1",
+    "cookie-parser": "1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "ejs": "7.0.1",
+    "exceljs": "^4.4.0",
+    "express": "^4.21.1",
+    "express-validator": "^7.2.0",
+    "helmet": "^8.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "method-override": "3.0.0",
+    "morgan": "^1.10.0",
+    "multer": "^1.4.5-lts.1",
+    "mysql2": "3.24.6",
+    "pdfkit": "^0.15.0",
+    "sequelize": "6.37.8"
   },
   "devDependencies": {
     "nodemon": "^3.1.7",
-    "prisma":  "^5.22.0"
+    "prisma": "^5.22.0"
   }
 }
