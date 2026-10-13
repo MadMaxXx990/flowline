@@ -1,0 +1,94 @@
+<%- include('../partials/layout_start') %>
+
+<div class="page-heading mb-4">Positions</div>
+
+<div class="row g-4">
+  <!-- Add form -->
+  <div class="col-md-5">
+    <div class="card border-0 shadow-sm p-4">
+      <h6 class="fw-semibold mb-3">New Position</h6>
+      <form method="POST" action="/admin/positions">
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">Name <span class="text-danger">*</span></label>
+          <input name="position_name" class="form-control" required />
+        </div>
+        <div class="mb-4">
+          <label class="form-label small fw-semibold">Description</label>
+          <textarea name="description" class="form-control" rows="2"></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm">Save</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="col-md-7">
+    <div class="card border-0 shadow-sm">
+      <table class="table table-hover align-middle mb-0 small">
+        <thead class="table-light">
+          <tr><th>Name</th><th>Description</th><th class="text-center">Employees</th><th></th></tr>
+        </thead>
+        <tbody>
+          <% if (!positions || positions.length === 0) { %>
+            <tr><td colspan="4" class="text-center py-4 text-muted">No positions yet.</td></tr>
+          <% } %>
+          <% (positions || []).forEach(p => { %>
+            <tr>
+              <td class="fw-semibold"><%= p.position_name %></td>
+              <td class="text-muted"><%= p.description || '—' %></td>
+              <td class="text-center">
+                <span class="badge bg-primary-subtle text-primary"><%= p.dataValues.employeeCount || 0 %></span>
+              </td>
+              <td class="text-end">
+                <button class="btn btn-sm btn-outline-secondary py-0 px-2 me-1"
+                        data-bs-toggle="modal" data-bs-target="#editPosModal"
+                        data-id="<%= p.position_id %>"
+                        data-name="<%= p.position_name %>"
+                        data-desc="<%= p.description || '' %>">
+                  <i class="bi bi-pencil"></i>
+                </button>
+                <form method="POST" action="/admin/positions/<%= p.position_id %>?_method=DELETE" class="d-inline"
+                      data-confirm="Remove position &quot;<%= p.position_name %>&quot;?">
+                  <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </form>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Edit Modal -->
+<div class="modal fade" id="editPosModal" tabindex="-1" aria-labelledby="editPosModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <form method="POST" id="editPosForm" action="">
+        <input type="hidden" name="_method" value="PUT" />
+        <div class="modal-header">
+          <h5 class="modal-title" id="editPosModalLabel">Edit Position</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Name <span class="text-danger">*</span></label>
+            <input name="position_name" id="editPosName" class="form-control" required />
+          </div>
+          <div class="mb-3">
+            <label class="form-label small fw-semibold">Description</label>
+            <textarea name="description" id="editPosDesc" class="form-control" rows="2"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-light btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary btn-sm">Update</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<%- include('../partials/layout_end') %>

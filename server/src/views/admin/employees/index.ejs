@@ -1,0 +1,98 @@
+<%- include('../../partials/layout_start') %>
+
+<div class="page-heading mb-4">Employee Management</div>
+
+<!-- Toolbar: GET form so filters appear in the URL -->
+<div class="d-flex flex-wrap gap-2 justify-content-between align-items-start mb-4">
+  <form method="GET" action="/admin/employees" class="d-flex flex-wrap gap-2">
+    <input type="text" name="search" class="form-control form-control-sm" style="width:220px;"
+           placeholder="Search name or email…" value="<%= query.search %>" />
+    <select name="department_id" class="form-select form-select-sm" style="width:180px;">
+      <option value="">All Departments</option>
+      <% (depts || []).forEach(d => { %>
+        <option value="<%= d.department_id %>" <%= query.department_id == d.department_id ? 'selected' : '' %>>
+          <%= d.department_name %>
+        </option>
+      <% }) %>
+    </select>
+    <select name="status" class="form-select form-select-sm" style="width:140px;">
+      <option value="">All Statuses</option>
+      <% ['Active','On Leave','Inactive'].forEach(s => { %>
+        <option value="<%= s %>" <%= query.status === s ? 'selected' : '' %>><%= s %></option>
+      <% }) %>
+    </select>
+    <button type="submit" class="btn btn-outline-secondary btn-sm">Filter</button>
+    <a href="/admin/employees" class="btn btn-outline-secondary btn-sm">Clear</a>
+  </form>
+  <a href="/admin/employees/new" class="btn btn-primary btn-sm">
+    <i class="bi bi-person-plus-fill me-1"></i>Add Employee
+  </a>
+</div>
+
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Employee</th><th>Department</th><th>Position</th>
+          <th>Role</th><th>Status</th><th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% if (!employees || employees.length === 0) { %>
+          <tr><td colspan="6" class="text-center py-5 text-muted">No employees found.</td></tr>
+        <% } %>
+        <% (employees || []).forEach(emp => { %>
+          <%
+            const statusMap = { Active:'success', 'On Leave':'warning', Inactive:'secondary' };
+            const sc = statusMap[emp.status] || 'secondary';
+            const initial = (emp.first_name || '?')[0].toUpperCase();
+          %>
+          <tr>
+            <td>
+              <div class="d-flex align-items-center gap-2">
+                <div class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center fw-bold flex-shrink-0"
+                     style="width:34px;height:34px;font-size:.8rem;">
+                  <%= initial %>
+                </div>
+                <div>
+                  <div class="fw-semibold"><%= emp.first_name %> <%= emp.last_name %></div>
+                  <div class="text-muted" style="font-size:.72rem;"><%= emp.email %></div>
+                </div>
+              </div>
+            </td>
+            <td><%= emp.department ? emp.department.department_name : '—' %></td>
+            <td><%= emp.position  ? emp.position.position_name   : '—' %></td>
+            <td>
+              <span class="badge bg-secondary-subtle text-secondary border">
+                <%= emp.user && emp.user.role ? emp.user.role.role_name : 'None' %>
+              </span>
+            </td>
+            <td>
+              <span class="badge bg-<%= sc %>-subtle text-<%= sc %> border"><%= emp.status %></span>
+            </td>
+            <td class="text-end">
+              <a href="/admin/employees/<%= emp.employee_id %>"
+                 class="btn btn-sm btn-outline-secondary py-0 px-2 me-1" title="View">
+                <i class="bi bi-eye"></i>
+              </a>
+              <a href="/admin/employees/<%= emp.employee_id %>/edit"
+                 class="btn btn-sm btn-outline-secondary py-0 px-2 me-1" title="Edit">
+                <i class="bi bi-pencil"></i>
+              </a>
+              <form method="POST" action="/admin/employees/<%= emp.employee_id %>?_method=DELETE"
+                    class="d-inline"
+                    data-confirm="Archive <%= emp.first_name %> <%= emp.last_name %>? Their account will be deactivated but all historical records are preserved.">
+                <button type="submit" class="btn btn-sm btn-outline-warning py-0 px-2" title="Archive">
+                  <i class="bi bi-archive"></i>
+                </button>
+              </form>
+            </td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<%- include('../../partials/layout_end') %>

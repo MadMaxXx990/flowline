@@ -1,0 +1,164 @@
+<%
+  /*
+   * Shared form partial for new and edit employee pages.
+   * Expected locals:
+   *   formValues   — object with current field values (empty {} for new)
+   *   depts        — array of Department records
+   *   positions    — array of Position records
+   *   roles        — array of Role records
+   *   teams        — array of Team records (with team_id, team_name, department_id)
+   *   EMP_TYPES    — ['Regular','Contractual','Part-time','Probationary']
+   *   STATUSES     — ['Active','On Leave','Inactive']  (only shown on edit)
+   *   isEdit       — boolean: true when editing, false when creating
+   *   error        — string or null
+   *   actionUrl    — form action URL
+   *   submitLabel  — label for the submit button
+   */
+  const f = formValues || {};
+%>
+
+<% if (locals.error) { %>
+  <div class="alert alert-danger d-flex align-items-center gap-2 py-2 small mb-4">
+    <i class="bi bi-exclamation-circle-fill"></i> <%= locals.error %>
+  </div>
+<% } %>
+
+<form method="POST" action="<%= actionUrl %>" enctype="multipart/form-data">
+  <% if (locals.isEdit) { %>
+    <input type="hidden" name="_method" value="PUT" />
+  <% } %>
+
+  <!-- Personal Information -->
+  <h6 class="text-uppercase text-muted fw-semibold mb-3" style="font-size:.7rem;letter-spacing:.1em;">Personal Information</h6>
+  <div class="row g-3 mb-4">
+    <div class="col-md-6">
+      <label class="form-label small fw-semibold">First Name <span class="text-danger">*</span></label>
+      <input name="first_name" class="form-control" required value="<%= f.first_name || '' %>" />
+    </div>
+    <div class="col-md-6">
+      <label class="form-label small fw-semibold">Last Name <span class="text-danger">*</span></label>
+      <input name="last_name" class="form-control" required value="<%= f.last_name || '' %>" />
+    </div>
+    <div class="col-md-6">
+      <label class="form-label small fw-semibold">Email <span class="text-danger">*</span></label>
+      <input type="email" name="email" class="form-control" required value="<%= f.email || '' %>" />
+    </div>
+    <div class="col-md-6">
+      <label class="form-label small fw-semibold">Phone</label>
+      <input name="phone" class="form-control" value="<%= f.phone || '' %>" />
+    </div>
+    <div class="col-md-6">
+      <label class="form-label small fw-semibold">Employment Type</label>
+      <select name="employment_type" class="form-select">
+        <option value="">Select…</option>
+        <% (EMP_TYPES || []).forEach(t => { %>
+          <option value="<%= t %>" <%= f.employment_type === t ? 'selected' : '' %>><%= t %></option>
+        <% }) %>
+      </select>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label small fw-semibold">Hire Date</label>
+      <input type="date" name="hire_date" class="form-control" value="<%= f.hire_date || '' %>" />
+    </div>
+    <% if (locals.isEdit) { %>
+    <div class="col-md-6">
+      <label class="form-label small fw-semibold">Status <span class="text-danger">*</span></label>
+      <select name="status" class="form-select" required>
+        <% (STATUSES || []).forEach(s => { %>
+          <option value="<%= s %>" <%= f.status === s ? 'selected' : '' %>><%= s %></option>
+        <% }) %>
+      </select>
+    </div>
+    <% } %>
+    <div class="col-md-6">
+      <label class="form-label small fw-semibold">Profile Photo</label>
+      <input type="file" name="profile_photo" class="form-control" accept="image/png,image/jpeg" />
+    </div>
+  </div>
+
+  <hr class="my-4" />
+
+  <!-- Organisational Assignment -->
+  <h6 class="text-uppercase text-muted fw-semibold mb-3" style="font-size:.7rem;letter-spacing:.1em;">Organisational Assignment</h6>
+  <div class="row g-3 mb-4">
+    <div class="col-md-6">
+      <label class="form-label small fw-semibold">Department <span class="text-danger">*</span></label>
+      <select name="department_id" id="empDeptSelect" class="form-select" required
+              data-team-dept-select
+              data-employees-json="<%- JSON.stringify(teams.map(t=>({id:t.team_id,name:t.team_name,dept:t.department_id}))) %>"
+              data-target-lead="empTeamSelect">
+        <option value="">Select…</option>
+        <% (depts || []).forEach(d => { %>
+          <option value="<%= d.department_id %>" <%= String(f.department_id) === String(d.department_id) ? 'selected' : '' %>>
+            <%= d.department_name %>
+          </option>
+        <% }) %>
+      </select>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label small fw-semibold">Position <span class="text-danger">*</span></label>
+      <select name="position_id" class="form-select" required>
+        <option value="">Select…</option>
+        <% (positions || []).forEach(p => { %>
+          <option value="<%= p.position_id %>" <%= String(f.position_id) === String(p.position_id) ? 'selected' : '' %>>
+            <%= p.position_name %>
+          </option>
+        <% }) %>
+      </select>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label small fw-semibold">Team <span class="text-muted">(optional)</span></label>
+      <!--
+        app.js will populate / filter this select based on the chosen department.
+        All team options are rendered here; hidden ones are toggled via JS.
+      -->
+      <select name="team_id" id="empTeamSelect" class="form-select" data-team-lead-select>
+        <option value="">None</option>
+        <% (teams || []).forEach(t => { %>
+          <option value="<%= t.team_id %>"
+                  data-dept="<%= t.department_id %>"
+                  <%= String(f.team_id) === String(t.team_id) ? 'selected' : '' %>
+                  <% if (f.department_id && String(t.department_id) !== String(f.department_id)) { %>hidden<% } %>>
+            <%= t.team_name %>
+          </option>
+        <% }) %>
+      </select>
+    </div>
+  </div>
+
+  <hr class="my-4" />
+
+  <!-- System Account -->
+  <h6 class="text-uppercase text-muted fw-semibold mb-3" style="font-size:.7rem;letter-spacing:.1em;">System Account</h6>
+  <div class="row g-3 mb-4">
+    <div class="col-md-4">
+      <label class="form-label small fw-semibold">Role <span class="text-danger">*</span></label>
+      <select name="role_id" class="form-select" required>
+        <option value="">Select…</option>
+        <% (roles || []).forEach(r => { %>
+          <option value="<%= r.role_id %>" <%= String(f.role_id) === String(r.role_id) ? 'selected' : '' %>>
+            <%= r.role_name %>
+          </option>
+        <% }) %>
+      </select>
+    </div>
+    <div class="col-md-4">
+      <label class="form-label small fw-semibold">Username <span class="text-danger">*</span></label>
+      <input name="username" class="form-control" required value="<%= f.username || '' %>" />
+    </div>
+    <div class="col-md-4">
+      <% if (locals.isEdit) { %>
+        <label class="form-label small fw-semibold">New Password <span class="text-muted">(leave blank to keep)</span></label>
+        <input type="password" name="password" class="form-control" placeholder="Leave blank to keep" />
+      <% } else { %>
+        <label class="form-label small fw-semibold">Password <span class="text-danger">*</span></label>
+        <input type="password" name="password" class="form-control" required minlength="6" />
+      <% } %>
+    </div>
+  </div>
+
+  <div class="d-flex justify-content-end gap-2">
+    <a href="/admin/employees" class="btn btn-light">Cancel</a>
+    <button type="submit" class="btn btn-primary"><%= submitLabel || 'Save' %></button>
+  </div>
+</form>

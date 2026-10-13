@@ -2,9 +2,7 @@
 <div style="display:flex;">
   <%- include('../partials/sidebar') %>
 
-  <!-- Main content area pushed right of the 250 px sidebar -->
   <div style="margin-left:250px;flex:1;min-height:100vh;background:#f5f6fa;">
-
     <!-- Topbar -->
     <header style="position:sticky;top:0;z-index:1030;background:#fff;border-bottom:1px solid #e9ecef;padding:0 1.5rem;height:60px;display:flex;align-items:center;justify-content:space-between;">
       <span style="font-weight:700;font-size:1rem;color:#1e1b4b;">Flowline</span>
@@ -21,11 +19,6 @@
         <p class="text-muted small mb-0">Dashboard content is coming in a later phase.</p>
       </div>
     </main>
-
   </div>
 </div>
-<script>
-  document.getElementById('topbar-date').textContent =
-    new Date().toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', year:'numeric' });
-</script>
 <%- include('../partials/footer') %>

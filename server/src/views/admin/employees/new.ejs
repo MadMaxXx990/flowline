@@ -1,0 +1,16 @@
+<%- include('../../partials/layout_start') %>
+
+<div class="page-heading mb-4">Add Employee</div>
+<div class="row justify-content-center">
+  <div class="col-lg-9">
+    <div class="card border-0 shadow-sm p-4">
+      <%- include('_form', {
+        actionUrl:   '/admin/employees',
+        submitLabel: 'Create Employee',
+        isEdit:      false
+      }) %>
+    </div>
+  </div>
+</div>
+
+<%- include('../../partials/layout_end') %>

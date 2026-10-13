@@ -1,124 +1,329 @@
-const prisma = require('../lib/prisma');
-const bcrypt = require('bcryptjs');
-const { log } = require('../lib/activityLog');
+'use strict';
+const path    = require('path');
+const fs      = require('fs');
+const bcrypt  = require('bcryptjs');
+const { Op }  = require('sequelize');
+const {
+  Employee, User, Role, Department, Position, Team,
+  TaskAssignment, Task, WorkflowStage,
+} = require('../models');
+const { log }      = require('../lib/activityLog');
+const { setFlash } = require('../middleware/flash');
 
-const include = {
-  department: true,
-  position: true,
-  team: true,
-  user: { include: { role: true } }
-};
+// ── Shared include options ────────────────────────────────────────────────────
+const baseInclude = [
+  { model: Department, as: 'department' },
+  { model: Position,   as: 'position' },
+  { model: Team,       as: 'team' },
+  { model: User,       as: 'user', include: [{ model: Role, as: 'role' }] },
+];
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+const EMP_TYPES = ['Regular', 'Contractual', 'Part-time', 'Probationary'];
+const STATUSES  = ['Active', 'On Leave', 'Inactive'];
+
+async function loadFormData() {
+  const [depts, positions, roles, teams] = await Promise.all([
+    Department.findAll({ where: { is_deleted: false }, order: [['department_name', 'ASC']] }),
+    Position.findAll({ order: [['position_name', 'ASC']] }),
+    Role.findAll({ order: [['role_name', 'ASC']] }),
+    Team.findAll({
+      where: { is_deleted: false },
+      attributes: ['team_id', 'team_name', 'department_id'],
+      order: [['team_name', 'ASC']],
+    }),
+  ]);
+  return { depts, positions, roles, teams };
+}
+
+// ── LIST ──────────────────────────────────────────────────────────────────────
 const index = async (req, res) => {
   const { search, department_id, status } = req.query;
   const where = { is_deleted: false };
   if (department_id) where.department_id = +department_id;
   if (status)        where.status = status;
   if (search) {
-    where.OR = [
-      { first_name: { contains: search } },
-      { last_name:  { contains: search } },
-      { email:      { contains: search } },
+    where[Op.or] = [
+      { first_name: { [Op.like]: `%${search}%` } },
+      { last_name:  { [Op.like]: `%${search}%` } },
+      { email:      { [Op.like]: `%${search}%` } },
     ];
   }
-  const employees = await prisma.employee.findMany({ where, include, orderBy: { created_at: 'desc' } });
-  res.json(employees);
+
+  const employees = await Employee.findAll({
+    where,
+    include: baseInclude,
+    order: [['created_at', 'DESC']],
+  });
+  const depts = await Department.findAll({ where: { is_deleted: false }, order: [['department_name', 'ASC']] });
+
+  res.render('admin/employees/index', {
+    role: 'Administrator', basePath: '/admin', user: req.user,
+    currentPath: '/admin/employees',
+    employees, depts,
+    query: { search: search || '', department_id: department_id || '', status: status || '' },
+  });
 };
 
+// ── SHOW ──────────────────────────────────────────────────────────────────────
 const show = async (req, res) => {
-  const emp = await prisma.employee.findUnique({ where: { employee_id: +req.params.id }, include });
-  if (!emp || emp.is_deleted) return res.status(404).json({ error: 'Employee not found.' });
-  res.json(emp);
+  const emp = await Employee.findOne({
+    where: { employee_id: +req.params.id, is_deleted: false },
+    include: [
+      ...baseInclude,
+      {
+        model: TaskAssignment, as: 'taskAssignments',
+        include: [{ model: Task, as: 'task', include: [{ model: WorkflowStage, as: 'stage' }] }],
+      },
+    ],
+  });
+  if (!emp) {
+    setFlash(res, 'danger', 'Employee not found.');
+    return res.redirect('/admin/employees');
+  }
+  res.render('admin/employees/show', {
+    role: 'Administrator', basePath: '/admin', user: req.user,
+    currentPath: '/admin/employees',
+    emp,
+  });
 };
 
+// ── NEW FORM ──────────────────────────────────────────────────────────────────
+const newForm = async (req, res) => {
+  const formData = await loadFormData();
+  res.render('admin/employees/new', {
+    role: 'Administrator', basePath: '/admin', user: req.user,
+    currentPath: '/admin/employees',
+    ...formData,
+    EMP_TYPES, STATUSES,
+    formValues: {},
+    error: null,
+  });
+};
+
+// ── CREATE ────────────────────────────────────────────────────────────────────
 const store = async (req, res) => {
-  const { first_name, last_name, email, phone, department_id, position_id, supervisor_id,
-          employment_type, hire_date, role_id, username, password, team_id } = req.body;
+  const {
+    first_name, last_name, email, phone,
+    department_id, position_id, supervisor_id, team_id,
+    employment_type, hire_date,
+    role_id, username, password,
+  } = req.body;
 
-  const exists = await prisma.employee.findUnique({ where: { email } });
-  if (exists) return res.status(409).json({ error: 'Email already in use.' });
+  const formData = await loadFormData();
+  const renderError = async (msg) => {
+    return res.status(422).render('admin/employees/new', {
+      role: 'Administrator', basePath: '/admin', user: req.user,
+      currentPath: '/admin/employees',
+      ...formData, EMP_TYPES, STATUSES,
+      formValues: req.body,
+      error: msg,
+    });
+  };
 
-  const userExists = await prisma.user.findUnique({ where: { username } });
-  if (userExists) return res.status(409).json({ error: 'Username already taken.' });
+  // Required field validation
+  if (!first_name || !last_name || !email || !username || !password) {
+    return renderError('First name, last name, email, username and password are required.');
+  }
+  // Basic email format
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return renderError('Please enter a valid email address.');
+  }
+  // Password minimum length
+  if (password.length < 6) {
+    return renderError('Password must be at least 6 characters.');
+  }
+
+  // Unique email
+  const emailExists = await Employee.findOne({ where: { email } });
+  if (emailExists) return renderError('That email address is already in use.');
+
+  // Unique username
+  const userExists = await User.findOne({ where: { username } });
+  if (userExists) return renderError('That username is already taken.');
 
   const profile_photo_url = req.file ? `uploads/${req.file.filename}` : null;
 
-  const emp = await prisma.employee.create({
-    data: {
-      first_name, last_name, email, phone, status: 'Active', profile_photo_url,
-      department_id: department_id ? +department_id : null,
-      position_id:   position_id   ? +position_id   : null,
-      supervisor_id: supervisor_id ? +supervisor_id : null,
-      team_id:       team_id       ? +team_id       : null,
-      employment_type, hire_date: hire_date ? new Date(hire_date) : null,
-    }
+  const emp = await Employee.create({
+    first_name, last_name, email,
+    phone:           phone           || null,
+    department_id:   department_id   ? +department_id   : null,
+    position_id:     position_id     ? +position_id     : null,
+    supervisor_id:   supervisor_id   ? +supervisor_id   : null,
+    team_id:         team_id         ? +team_id         : null,
+    employment_type: employment_type || null,
+    hire_date:       hire_date       ? new Date(hire_date) : null,
+    status: 'Active',
+    profile_photo_url,
   });
 
-  await prisma.user.create({
-    data: {
-      employee_id: emp.employee_id,
-      role_id:     role_id ? +role_id : null,
-      username,
-      password: await bcrypt.hash(password, 10),
-      status: 'active',
-    }
+  await User.create({
+    employee_id: emp.employee_id,
+    role_id:     role_id ? +role_id : null,
+    username,
+    password:    await bcrypt.hash(password, 10),
+    status:      'active',
   });
 
   await log(req.user.id, 'create', `Created employee: ${first_name} ${last_name}`, 'employees', emp.employee_id);
-  res.status(201).json(emp);
+  setFlash(res, 'success', `Employee ${first_name} ${last_name} created.`);
+  return res.redirect('/admin/employees');
 };
 
-const update = async (req, res) => {
-  const { first_name, last_name, email, phone, department_id, position_id, supervisor_id,
-          employment_type, hire_date, status, role_id, username, password, team_id } = req.body;
+// ── EDIT FORM ─────────────────────────────────────────────────────────────────
+const editForm = async (req, res) => {
+  const emp = await Employee.findOne({
+    where: { employee_id: +req.params.id, is_deleted: false },
+    include: baseInclude,
+  });
+  if (!emp) {
+    setFlash(res, 'danger', 'Employee not found.');
+    return res.redirect('/admin/employees');
+  }
+  const formData = await loadFormData();
+  res.render('admin/employees/edit', {
+    role: 'Administrator', basePath: '/admin', user: req.user,
+    currentPath: '/admin/employees',
+    ...formData, EMP_TYPES, STATUSES,
+    emp,
+    formValues: {
+      first_name:      emp.first_name,
+      last_name:       emp.last_name,
+      email:           emp.email,
+      phone:           emp.phone           ?? '',
+      department_id:   String(emp.department_id ?? ''),
+      position_id:     String(emp.position_id   ?? ''),
+      team_id:         emp.team_id ? String(emp.team_id) : '',
+      employment_type: emp.employment_type ?? '',
+      hire_date:       emp.hire_date ? String(emp.hire_date).split('T')[0] : '',
+      status:          emp.status,
+      role_id:         String(emp.user?.role_id ?? ''),
+      username:        emp.user?.username ?? '',
+    },
+    error: null,
+  });
+};
 
-  const emp = await prisma.employee.findUnique({ where: { employee_id: +req.params.id }, include: { user: true } });
-  if (!emp || emp.is_deleted) return res.status(404).json({ error: 'Employee not found.' });
+// ── UPDATE ────────────────────────────────────────────────────────────────────
+const update = async (req, res) => {
+  const id = +req.params.id;
+  const {
+    first_name, last_name, email, phone,
+    department_id, position_id, supervisor_id, team_id,
+    employment_type, hire_date, status,
+    role_id, username, password,
+  } = req.body;
+
+  const emp = await Employee.findOne({
+    where: { employee_id: id, is_deleted: false },
+    include: baseInclude,
+  });
+  if (!emp) {
+    setFlash(res, 'danger', 'Employee not found.');
+    return res.redirect('/admin/employees');
+  }
+
+  const formData = await loadFormData();
+  const renderError = async (msg) => {
+    return res.status(422).render('admin/employees/edit', {
+      role: 'Administrator', basePath: '/admin', user: req.user,
+      currentPath: '/admin/employees',
+      ...formData, EMP_TYPES, STATUSES,
+      emp,
+      formValues: req.body,
+      error: msg,
+    });
+  };
+
+  if (!first_name || !last_name || !email || !username) {
+    return renderError('First name, last name, email and username are required.');
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return renderError('Please enter a valid email address.');
+  }
+
+  // Unique email (excluding self)
+  const emailExists = await Employee.findOne({ where: { email, employee_id: { [Op.ne]: id } } });
+  if (emailExists) return renderError('That email address is already in use.');
+
+  // Unique username (excluding current user)
+  const existingUser = emp.user;
+  if (existingUser && username !== existingUser.username) {
+    const usernameTaken = await User.findOne({ where: { username, id: { [Op.ne]: existingUser.id } } });
+    if (usernameTaken) return renderError('That username is already taken.');
+  }
 
   const profile_photo_url = req.file ? `uploads/${req.file.filename}` : emp.profile_photo_url;
 
-  const updated = await prisma.employee.update({
-    where: { employee_id: +req.params.id },
-    data: {
-      first_name, last_name, email, phone, status, profile_photo_url,
-      department_id: department_id ? +department_id : null,
-      position_id:   position_id   ? +position_id   : null,
-      supervisor_id: supervisor_id ? +supervisor_id : null,
-      team_id:       team_id       ? +team_id       : null,
-      employment_type, hire_date: hire_date ? new Date(hire_date) : null,
-    }
+  await emp.update({
+    first_name, last_name, email,
+    phone:           phone           || null,
+    department_id:   department_id   ? +department_id   : null,
+    position_id:     position_id     ? +position_id     : null,
+    supervisor_id:   supervisor_id   ? +supervisor_id   : null,
+    team_id:         team_id         ? +team_id         : null,
+    employment_type: employment_type || null,
+    hire_date:       hire_date       ? new Date(hire_date) : null,
+    status:          status          || emp.status,
+    profile_photo_url,
   });
 
-  if (emp.user) {
+  if (existingUser) {
     const userUpdate = { role_id: role_id ? +role_id : null, username };
-    if (password) userUpdate.password = await bcrypt.hash(password, 10);
-    await prisma.user.update({ where: { id: emp.user.id }, data: userUpdate });
+    if (password && password.length >= 6) {
+      userUpdate.password = await bcrypt.hash(password, 10);
+    }
+    await existingUser.update(userUpdate);
   }
 
-  await log(req.user.id, 'update', `Updated employee: ${first_name} ${last_name}`, 'employees', +req.params.id);
-  res.json(updated);
+  await log(req.user.id, 'update', `Updated employee: ${first_name} ${last_name}`, 'employees', id);
+  setFlash(res, 'success', 'Employee updated.');
+  return res.redirect(`/admin/employees/${id}`);
 };
 
+// ── ARCHIVE (soft-delete) ─────────────────────────────────────────────────────
 const destroy = async (req, res) => {
-  const emp = await prisma.employee.findUnique({ where: { employee_id: +req.params.id }, include: { user: true } });
-  if (!emp || emp.is_deleted) return res.status(404).json({ error: 'Not found.' });
-
-  // Soft-delete: mark as archived, never remove from DB.
-  // All related tasks, comments, approvals and activity logs are preserved —
-  // the audit trail stays intact even after the employee leaves the company.
-  await prisma.employee.update({
-    where: { employee_id: +req.params.id },
-    data: { is_deleted: true, status: 'Archived' }
+  const id = +req.params.id;
+  const emp = await Employee.findOne({
+    where: { employee_id: id, is_deleted: false },
+    include: [{ model: User, as: 'user' }],
   });
-  if (emp.user) {
-    await prisma.user.update({
-      where: { id: emp.user.id },
-      data: { is_deleted: true, status: 'inactive' }
-    });
+  if (!emp) {
+    setFlash(res, 'danger', 'Employee not found.');
+    return res.redirect('/admin/employees');
   }
 
-  await log(req.user.id, 'archive', `Archived employee: ${emp.first_name} ${emp.last_name}`, 'employees', +req.params.id);
-  res.json({ message: 'Employee archived. All historical records are preserved.' });
+  // Soft-delete: mark as archived — all historical records are preserved.
+  await emp.update({ is_deleted: true, status: 'Archived' });
+  if (emp.user) {
+    await emp.user.update({ is_deleted: true, status: 'inactive' });
+  }
+
+  await log(req.user.id, 'archive', `Archived employee: ${emp.first_name} ${emp.last_name}`, 'employees', id);
+  setFlash(res, 'success', `${emp.first_name} ${emp.last_name} has been archived.`);
+  return res.redirect('/admin/employees');
 };
 
-module.exports = { index, show, store, update, destroy };
+// ── PROFILE PHOTO (authenticated stream) ─────────────────────────────────────
+const photo = async (req, res) => {
+  const emp = await Employee.findOne({
+    where: { employee_id: +req.params.id },
+    attributes: ['profile_photo_url'],
+  });
+  if (!emp || !emp.profile_photo_url) {
+    return res.status(404).send('No photo.');
+  }
+
+  // Security: resolve the path and ensure it stays inside the uploads directory.
+  const uploadsDir = path.resolve(__dirname, '../../uploads');
+  const requested  = path.resolve(uploadsDir, path.basename(emp.profile_photo_url));
+  if (!requested.startsWith(uploadsDir + path.sep) && requested !== uploadsDir) {
+    return res.status(403).send('Forbidden.');
+  }
+  if (!fs.existsSync(requested)) {
+    return res.status(404).send('File not found.');
+  }
+  return res.sendFile(requested);
+};
+
+module.exports = { index, show, newForm, store, editForm, update, destroy, photo };
