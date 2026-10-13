@@ -48,4 +48,15 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
+  // ── Progress range live display ───────────────────────────────────────────────
+  // The range input #progress-range drives the label #progress-value on the
+  // task show page (Employee progress update form). No inline handlers needed.
+  const progressRange = document.getElementById('progress-range');
+  const progressValue = document.getElementById('progress-value');
+  if (progressRange && progressValue) {
+    progressRange.addEventListener('input', () => {
+      progressValue.textContent = progressRange.value + '%';
+    });
+  }
+
 });

@@ -2,7 +2,7 @@
 <%
   const stageMap = { Pending:'secondary','In Progress':'primary','For Review':'warning',Completed:'success',Overdue:'danger' };
   const priMap   = { Low:'secondary', Medium:'warning', High:'danger' };
-  const sname    = task.stage  ? task.stage.stage_name    : '—';
+  const sname    = task.stage   ? task.stage.stage_name    : '—';
   const pname    = task.priority ? task.priority.priority_name : '—';
   const sc       = stageMap[sname] || 'secondary';
   const pc       = priMap[pname]   || 'secondary';
@@ -13,6 +13,12 @@
   const creator = task.creator && task.creator.employee
     ? task.creator.employee.first_name + ' ' + task.creator.employee.last_name
     : (task.creator ? task.creator.username : '—');
+  const isEmployee  = role === 'Employee';
+  const isForReview = sname === 'For Review';
+  const isCompleted = sname === 'Completed';
+  // Employee may progress/submit when not Completed and not For Review
+  const canProgress = isEmployee && !isCompleted && !isForReview;
+  const canSubmit   = isEmployee && !isCompleted && !isForReview;
 %>
 
 <div class="page-heading mb-4">Task Detail</div>
@@ -69,7 +75,7 @@
       </div>
     </div>
 
-    <!-- Progress bar -->
+    <!-- Overall progress bar -->
     <div class="card border-0 shadow-sm p-3 mb-4">
       <div class="d-flex justify-content-between small mb-1">
         <span class="fw-semibold">Overall Progress</span><span><%= latestProg %>%</span>
@@ -79,6 +85,46 @@
       </div>
     </div>
 
+    <!-- ── MANAGER / ADMIN: Change Stage ── -->
+    <% if (canManage) { %>
+    <div class="card border-0 shadow-sm p-3 mb-4">
+      <p class="fw-semibold small mb-2">Change Stage</p>
+      <form method="POST" action="<%= basePath %>/tasks/<%= task.task_id %>/stage"
+            class="d-flex flex-wrap gap-2">
+        <select name="stage_id" class="form-select form-select-sm" style="width:180px;">
+          <% (locals.allStages || []).forEach(s => { %>
+            <option value="<%= s.stage_id %>" <%= task.stage_id == s.stage_id ? 'selected':'' %>><%= s.stage_name %></option>
+          <% }) %>
+        </select>
+        <input type="text" name="remarks" class="form-control form-control-sm" style="flex:1;min-width:140px;"
+               placeholder="Reason (optional)" />
+        <button type="submit" class="btn btn-sm btn-outline-primary">Update Stage</button>
+      </form>
+    </div>
+    <% } %>
+
+    <!-- ── MANAGER / ADMIN: Approve / Return (only when For Review) ── -->
+    <% if (canManage && isForReview) { %>
+    <div class="card border-0 shadow-sm p-4 mb-4" style="border-left:3px solid #f59e0b!important;">
+      <p class="fw-semibold mb-3"><i class="bi bi-eye-fill text-warning me-2"></i>Approval Required</p>
+      <form method="POST" action="<%= basePath %>/tasks/<%= task.task_id %>/approve">
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">Decision</label>
+          <select name="approval_status" class="form-select">
+            <option value="Approved">✅ Approve — Mark as Completed</option>
+            <option value="Revision Requested">🔁 Request Revision — Return to In Progress</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">Remarks <span class="text-muted">(optional)</span></label>
+          <textarea name="remarks" class="form-control" rows="2" placeholder="Optional feedback…"></textarea>
+        </div>
+        <button type="submit" class="btn btn-warning">Submit Decision</button>
+      </form>
+    </div>
+    <% } %>
+
+    <!-- Last review result -->
     <% if (latestApproval) { %>
     <div class="card border-0 shadow-sm p-3 mb-4 small">
       <span class="fw-semibold">Last Review: </span>
@@ -89,7 +135,44 @@
     </div>
     <% } %>
 
-    <!-- Progress Updates -->
+    <!-- ── EMPLOYEE: Progress update form ── -->
+    <% if (canProgress) { %>
+    <div class="card border-0 shadow-sm p-4 mb-4">
+      <p class="fw-semibold small mb-3">Post a Progress Update</p>
+      <form method="POST" action="/employee/tasks/<%= task.task_id %>/progress">
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">
+            Progress: <strong id="progress-value"><%= latestProg %>%</strong>
+          </label>
+          <input type="range" name="progress_percent" class="form-range"
+                 id="progress-range" min="0" max="100" step="5"
+                 value="<%= latestProg %>" />
+        </div>
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">Update Message <span class="text-danger">*</span></label>
+          <textarea name="update_message" class="form-control" rows="3" required
+                    placeholder="Describe what you've done…"></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm">Save Update</button>
+      </form>
+    </div>
+    <% } %>
+
+    <!-- ── EMPLOYEE: Submit for review ── -->
+    <% if (canSubmit) { %>
+    <div class="card border-0 shadow-sm p-4 mb-4">
+      <p class="fw-semibold small mb-2">Ready to submit?</p>
+      <p class="text-muted small mb-3">Submit this task for your manager to review and approve.</p>
+      <form method="POST" action="/employee/tasks/<%= task.task_id %>/submit"
+            data-confirm="Submit this task for manager review?">
+        <button type="submit" class="btn btn-warning w-100">
+          <i class="bi bi-send me-1"></i>Submit for Review
+        </button>
+      </form>
+    </div>
+    <% } %>
+
+    <!-- Progress updates list -->
     <div class="card border-0 shadow-sm mb-4">
       <div class="px-3 pt-3 pb-2 border-bottom fw-semibold small">
         Progress Updates (<%= (task.updates || []).length %>)
@@ -98,9 +181,7 @@
         <div class="p-3 text-center text-muted small">No updates yet.</div>
       <% } else { %>
         <% task.updates.forEach(u => { %>
-          <%
-            const uname = u.employee ? u.employee.first_name + ' ' + u.employee.last_name : '—';
-          %>
+          <% const uname = u.employee ? u.employee.first_name + ' ' + u.employee.last_name : '—'; %>
           <div class="px-3 py-2 border-bottom small">
             <div class="d-flex justify-content-between">
               <span class="fw-semibold"><%= uname %></span>
@@ -123,20 +204,38 @@
         <div class="p-3 text-center text-muted small">No comments yet.</div>
       <% } else { %>
         <% task.comments.forEach(c => { %>
-          <%
-            const cuser = c.user && c.user.employee
+          <% const cuser = c.user && c.user.employee
               ? c.user.employee.first_name + ' ' + c.user.employee.last_name
-              : (c.user ? c.user.username : '—');
-          %>
+              : (c.user ? c.user.username : '—'); %>
           <div class="px-3 py-2 border-bottom small">
             <div class="d-flex justify-content-between align-items-center">
               <span class="fw-semibold"><%= cuser %></span>
-              <span class="text-muted" style="font-size:.7rem;"><%= new Date(c.created_at).toLocaleString() %></span>
+              <div class="d-flex align-items-center gap-2">
+                <span class="text-muted" style="font-size:.7rem;"><%= new Date(c.created_at).toLocaleString() %></span>
+                <% if (canManage) { %>
+                <form method="POST"
+                      action="<%= basePath %>/tasks/<%= task.task_id %>/comments/<%= c.comment_id %>?_method=DELETE"
+                      data-confirm="Remove this comment?">
+                  <button type="submit" class="btn btn-sm p-0 border-0 bg-transparent text-danger">
+                    <i class="bi bi-x fs-6"></i>
+                  </button>
+                </form>
+                <% } %>
+              </div>
             </div>
             <p class="mb-0 mt-1"><%= c.comment_text %></p>
           </div>
         <% }) %>
       <% } %>
+      <!-- Add comment form — all roles -->
+      <div class="p-3">
+        <form method="POST" action="<%= basePath %>/tasks/<%= task.task_id %>/comments"
+              class="d-flex gap-2">
+          <input type="text" name="comment_text" class="form-control form-control-sm"
+                 placeholder="Add a comment…" required />
+          <button type="submit" class="btn btn-sm btn-primary">Post</button>
+        </form>
+      </div>
     </div>
 
   </div>
@@ -148,7 +247,7 @@
     <div class="card border-0 shadow-sm p-3 mb-4">
       <p class="fw-semibold small mb-2">Assigned To</p>
       <% (task.assignments || []).forEach(a => { %>
-        <% const init = a.employee ? (a.employee.first_name||'?')[0].toUpperCase() : '?'; %>
+        <% const init  = a.employee ? (a.employee.first_name||'?')[0].toUpperCase() : '?'; %>
         <% const aname = a.employee ? a.employee.first_name + ' ' + a.employee.last_name : '—'; %>
         <% const apos  = a.employee && a.employee.position ? a.employee.position.position_name : ''; %>
         <div class="d-flex align-items-center gap-2 py-1">
@@ -162,7 +261,7 @@
       <% }) %>
     </div>
 
-    <!-- Attachments -->
+    <!-- Attachments + upload -->
     <div class="card border-0 shadow-sm p-3 mb-4">
       <p class="fw-semibold small mb-2">Attachments (<%= (task.attachments || []).length %>)</p>
       <% (task.attachments || []).forEach(a => { %>
@@ -171,17 +270,23 @@
             <i class="bi bi-file-earmark text-muted flex-shrink-0"></i>
             <span class="text-truncate"><%= a.file_name %></span>
           </div>
-          <!-- Download via the existing authenticated route -->
           <a href="/api/files/<%= a.attachment_id %>/download"
              class="btn btn-sm btn-outline-secondary py-0 px-2 flex-shrink-0"
-             title="Download <%= a.file_name %>">
+             title="Download">
             <i class="bi bi-download"></i>
           </a>
         </div>
       <% }) %>
       <% if (!(task.attachments && task.attachments.length)) { %>
-        <div class="text-muted small">No attachments.</div>
+        <div class="text-muted small mb-2">No attachments.</div>
       <% } %>
+      <!-- Upload form — all roles with access -->
+      <form method="POST" action="<%= basePath %>/tasks/<%= task.task_id %>/attachments"
+            enctype="multipart/form-data" class="d-flex gap-2 mt-2">
+        <input type="file" name="file" class="form-control form-control-sm"
+               accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.png,.jpg,.jpeg" required />
+        <button type="submit" class="btn btn-sm btn-outline-primary flex-shrink-0">Upload</button>
+      </form>
     </div>
 
     <!-- Approvals -->
@@ -189,12 +294,10 @@
     <div class="card border-0 shadow-sm p-3 mb-4">
       <p class="fw-semibold small mb-2">Approvals</p>
       <% task.approvals.forEach(ap => { %>
-        <%
-          const apname = ap.approver && ap.approver.employee
+        <% const apname = ap.approver && ap.approver.employee
             ? ap.approver.employee.first_name + ' ' + ap.approver.employee.last_name
             : (ap.approver ? ap.approver.username : '—');
-          const apbg = ap.approval_status === 'Approved' ? 'success' : 'warning';
-        %>
+           const apbg = ap.approval_status === 'Approved' ? 'success' : 'warning'; %>
         <div class="small mb-2 pb-2 border-bottom">
           <div class="d-flex justify-content-between">
             <span class="fw-semibold"><%= apname %></span>

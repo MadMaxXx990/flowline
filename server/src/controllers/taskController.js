@@ -291,10 +291,12 @@ const show = async (req, res) => {
                   : '/employee';
   const canManage = req.user.role !== 'Employee';
 
+  const allStages = await WorkflowStage.findAll({ order: [['step_order', 'ASC']] });
+
   res.render('tasks/show', {
     role: req.user.role, basePath, user: req.user,
     currentPath: `${basePath}/tasks`,
-    task, canManage,
+    task, canManage, allStages,
   });
 };
 
@@ -404,4 +406,253 @@ const destroy = async (req, res) => {
   return res.redirect(`${basePath}/tasks`);
 };
 
-module.exports = { board, newForm, store, show, editForm, update, destroy };
+// ── CHANGE STAGE (Administrator + Manager) ────────────────────────────────────
+// No transition validation — any stage may be set to any other stage (original behaviour).
+const changeStage = async (req, res) => {
+  const id       = +req.params.id;
+  const basePath = req.user.role === 'Administrator' ? '/admin' : '/manager';
+  const { stage_id, remarks } = req.body;
+
+  const task = await Task.findOne({
+    where:   { task_id: id, is_deleted: false },
+    include: [{ model: TaskAssignment, as: 'assignments',
+      include: [{ model: Employee, as: 'employee', include: [{ model: User, as: 'user' }] }] }],
+  });
+  if (!task) return res.status(404).render('errors/404');
+
+  const { sequelize } = require('../models');
+  await sequelize.transaction(async tx => {
+    const old = task.stage_id;
+    await task.update({ stage_id: +stage_id, updated_by_user_id: req.user.id }, { transaction: tx });
+    await TaskStageHistory.create({
+      task_id: id, changed_by_user_id: req.user.id,
+      old_stage_id: old, new_stage_id: +stage_id, remarks: remarks || null,
+    }, { transaction: tx });
+  });
+
+  const stage = await WorkflowStage.findOne({ where: { stage_id: +stage_id } });
+  const uids  = task.assignments.map(a => a.employee?.user?.id).filter(Boolean);
+  if (uids.length) {
+    await send(uids, 'status', 'Task Stage Updated',
+      `Task "${task.task_title}" moved to ${stage.stage_name}.`, id, req.user.id);
+  }
+  await log(req.user.id, 'update', `Changed task ${id} to ${stage.stage_name}`, 'tasks', id);
+
+  setFlash(res, 'success', `Stage changed to ${stage.stage_name}.`);
+  return res.redirect(`${basePath}/tasks/${id}`);
+};
+
+// ── APPROVE / RETURN (Administrator + Manager) ────────────────────────────────
+// approval_status = 'Approved' → Completed; anything else → 'In Progress'
+// Remarks are not required (original behaviour).
+const approve = async (req, res) => {
+  const id       = +req.params.id;
+  const basePath = req.user.role === 'Administrator' ? '/admin' : '/manager';
+  const { approval_status, remarks } = req.body;
+
+  const task = await Task.findOne({
+    where:   { task_id: id, is_deleted: false },
+    include: [{ model: TaskAssignment, as: 'assignments',
+      include: [{ model: Employee, as: 'employee', include: [{ model: User, as: 'user' }] }] }],
+  });
+  if (!task) return res.status(404).render('errors/404');
+
+  const stageName = approval_status === 'Approved' ? 'Completed' : 'In Progress';
+  const newStage  = await WorkflowStage.findOne({ where: { stage_name: stageName } });
+  const histRemarks = approval_status === 'Approved' ? 'Approved.' : 'Returned for revision.';
+
+  const { sequelize } = require('../models');
+  await sequelize.transaction(async tx => {
+    await Approval.create({
+      task_id: id, approver_user_id: req.user.id,
+      approval_status, remarks: remarks || null, approval_date: new Date(),
+    }, { transaction: tx });
+    await task.update({ stage_id: newStage.stage_id, updated_by_user_id: req.user.id }, { transaction: tx });
+    await TaskStageHistory.create({
+      task_id: id, changed_by_user_id: req.user.id,
+      old_stage_id: task.stage_id, new_stage_id: newStage.stage_id, remarks: histRemarks,
+    }, { transaction: tx });
+  });
+
+  const uids = task.assignments.map(a => a.employee?.user?.id).filter(Boolean);
+  const notifMsg = `Task "${task.task_title}": ${approval_status}.${remarks ? ` Remarks: ${remarks}` : ''}`;
+  if (uids.length) {
+    await send(uids, 'approval', 'Task Review Decision', notifMsg, id, req.user.id);
+  }
+  await log(req.user.id, 'approval', `Reviewed task ${id}: ${approval_status}`, 'tasks', id);
+
+  setFlash(res, 'success', `Task ${approval_status}.`);
+  return res.redirect(`${basePath}/tasks/${id}`);
+};
+
+// ── SUBMIT FOR REVIEW (Employee) ──────────────────────────────────────────────
+// ONE submission from any assignee moves the whole task to For Review (original behaviour).
+// No "all assignees must submit" check.
+const submitForReview = async (req, res) => {
+  const id = +req.params.id;
+
+  const task = await Task.findOne({ where: { task_id: id, is_deleted: false } });
+  if (!task) return res.status(404).render('errors/404');
+
+  // Verify this employee is assigned
+  const assigned = await TaskAssignment.findOne({
+    where: { task_id: id, employee_id: +req.user.employeeId },
+  });
+  if (!assigned) return res.status(404).render('errors/404');
+
+  // Idempotency: if already For Review or beyond, redirect cleanly
+  const forReviewStage = await WorkflowStage.findOne({ where: { stage_name: 'For Review' } });
+  if (task.stage_id === forReviewStage.stage_id) {
+    setFlash(res, 'info', 'Task is already submitted for review.');
+    return res.redirect(`/employee/tasks/${id}`);
+  }
+
+  const { sequelize } = require('../models');
+  await sequelize.transaction(async tx => {
+    await task.update({ stage_id: forReviewStage.stage_id, updated_by_user_id: req.user.id }, { transaction: tx });
+    await TaskStageHistory.create({
+      task_id: id, changed_by_user_id: req.user.id,
+      old_stage_id: task.stage_id, new_stage_id: forReviewStage.stage_id, remarks: 'Submitted for review.',
+    }, { transaction: tx });
+  });
+
+  // Notify the task creator
+  await send(task.created_by_user_id, 'approval', 'Task Ready for Review',
+    `Task "${task.task_title}" was submitted for review.`, id, req.user.id);
+  await log(req.user.id, 'update', `Submitted task ${id} for review`, 'tasks', id);
+
+  setFlash(res, 'success', 'Task submitted for review.');
+  return res.redirect(`/employee/tasks/${id}`);
+};
+
+// ── POST PROGRESS (Employee) ──────────────────────────────────────────────────
+// No range enforcement in original — any number accepted.
+// Auto-moves Pending → In Progress (only; Overdue stays Overdue).
+const postProgress = async (req, res) => {
+  const id = +req.params.id;
+  const { update_message, progress_percent } = req.body;
+
+  if (!update_message || !update_message.trim()) {
+    setFlash(res, 'danger', 'Update message is required.');
+    return res.redirect(`/employee/tasks/${id}`);
+  }
+
+  const task = await Task.findOne({ where: { task_id: id, is_deleted: false } });
+  if (!task) return res.status(404).render('errors/404');
+
+  // Verify this employee is assigned
+  const assigned = await TaskAssignment.findOne({
+    where: { task_id: id, employee_id: +req.user.employeeId },
+  });
+  if (!assigned) return res.status(404).render('errors/404');
+
+  const pct = Math.max(0, Math.min(100, +progress_percent || 0));
+
+  const { sequelize } = require('../models');
+  await sequelize.transaction(async tx => {
+    await TaskUpdate.create({
+      task_id: id, employee_id: +req.user.employeeId,
+      update_message: update_message.trim(), progress_percent: pct,
+    }, { transaction: tx });
+
+    // Auto-move Pending → In Progress
+    const pending    = await WorkflowStage.findOne({ where: { stage_name: 'Pending'      } });
+    const inProgress = await WorkflowStage.findOne({ where: { stage_name: 'In Progress'  } });
+    if (task.stage_id === pending.stage_id) {
+      await task.update({ stage_id: inProgress.stage_id }, { transaction: tx });
+      await TaskStageHistory.create({
+        task_id: id, changed_by_user_id: req.user.id,
+        old_stage_id: pending.stage_id, new_stage_id: inProgress.stage_id,
+        remarks: 'Progress update posted.',
+      }, { transaction: tx });
+    }
+  });
+
+  await log(req.user.id, 'update', `Posted progress on task ${id}`, 'task_updates', id);
+
+  setFlash(res, 'success', 'Progress saved.');
+  return res.redirect(`/employee/tasks/${id}`);
+};
+
+// ── ADD COMMENT (any authenticated user) ─────────────────────────────────────
+// No role restriction in original — anyone logged in may comment.
+const addComment = async (req, res) => {
+  const id = +req.params.id;
+  const { comment_text } = req.body;
+
+  if (!comment_text || !comment_text.trim()) {
+    setFlash(res, 'danger', 'Comment text is required.');
+    return res.redirect('back');
+  }
+
+  const task = await Task.findOne({ where: { task_id: id, is_deleted: false } });
+  if (!task) return res.status(404).render('errors/404');
+
+  // Employees may only comment on tasks assigned to them
+  if (req.user.role === 'Employee') {
+    const assigned = await TaskAssignment.findOne({
+      where: { task_id: id, employee_id: +req.user.employeeId },
+    });
+    if (!assigned) return res.status(404).render('errors/404');
+  }
+
+  await TaskComment.create({ task_id: id, user_id: req.user.id, comment_text: comment_text.trim() });
+
+  const basePath = req.user.role === 'Administrator' ? '/admin'
+                 : req.user.role === 'Manager'       ? '/manager'
+                 : '/employee';
+  return res.redirect(`${basePath}/tasks/${id}`);
+};
+
+// ── DELETE COMMENT (Administrator + Manager only) — soft delete ───────────────
+const deleteComment = async (req, res) => {
+  const id  = +req.params.id;
+  const cid = +req.params.cid;
+  const basePath = req.user.role === 'Administrator' ? '/admin' : '/manager';
+
+  await TaskComment.update({ is_deleted: true }, { where: { comment_id: cid } });
+
+  return res.redirect(`${basePath}/tasks/${id}`);
+};
+
+// ── UPLOAD ATTACHMENT (any authenticated user) ────────────────────────────────
+// No role restriction in original — anyone logged in may upload.
+const uploadAttachment = async (req, res) => {
+  const id = +req.params.id;
+
+  if (!req.file) {
+    setFlash(res, 'danger', 'No file provided.');
+    return res.redirect('back');
+  }
+
+  const task = await Task.findOne({ where: { task_id: id, is_deleted: false } });
+  if (!task) return res.status(404).render('errors/404');
+
+  // Employees may only attach to tasks assigned to them
+  if (req.user.role === 'Employee') {
+    const assigned = await TaskAssignment.findOne({
+      where: { task_id: id, employee_id: +req.user.employeeId },
+    });
+    if (!assigned) return res.status(404).render('errors/404');
+  }
+
+  await Attachment.create({
+    task_id:             id,
+    uploaded_by_user_id: req.user.id,
+    file_name:           req.file.originalname,
+    file_path:           `uploads/${req.file.filename}`,
+    file_type:           req.file.originalname.split('.').pop(),
+  });
+
+  setFlash(res, 'success', 'File uploaded.');
+  const basePath = req.user.role === 'Administrator' ? '/admin'
+                 : req.user.role === 'Manager'       ? '/manager'
+                 : '/employee';
+  return res.redirect(`${basePath}/tasks/${id}`);
+};
+
+module.exports = {
+  board, newForm, store, show, editForm, update, destroy,
+  changeStage, approve, submitForReview, postProgress,
+  addComment, deleteComment, uploadAttachment,
+};

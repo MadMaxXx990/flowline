@@ -23,5 +23,11 @@ router.get('/tasks/:id',        taskC.show);
 router.get('/tasks/:id/edit',   taskC.editForm);
 router.post('/tasks/:id',       taskC.update);   // ?_method=PUT
 router.delete('/tasks/:id',     taskC.destroy);  // ?_method=DELETE
+// ── Task workflow actions (POST only) ─────────────────────────────────────────
+router.post('/tasks/:id/stage',       taskC.changeStage);
+router.post('/tasks/:id/approve',     taskC.approve);
+router.post('/tasks/:id/comments',    taskC.addComment);
+router.delete('/tasks/:id/comments/:cid', taskC.deleteComment);  // ?_method=DELETE
+router.post('/tasks/:id/attachments', upload.single('file'), taskC.uploadAttachment);
 
 module.exports = router;

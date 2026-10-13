@@ -14,9 +14,14 @@ router.get('/dashboard', (req, res) => {
   });
 });
 
-// ── Tasks (read-only) ─────────────────────────────────────────────────────────
+// ── Tasks (read-only board + workflow actions) ────────────────────────────────
 // Employees see only tasks assigned to them (enforced in taskController.board / taskController.show)
 router.get('/tasks',      taskC.board);
 router.get('/tasks/:id',  taskC.show);
+// ── Employee workflow actions (POST only) ─────────────────────────────────────
+router.post('/tasks/:id/progress',    taskC.postProgress);
+router.post('/tasks/:id/submit',      taskC.submitForReview);
+router.post('/tasks/:id/comments',    taskC.addComment);
+router.post('/tasks/:id/attachments', require('../middleware/upload').single('file'), taskC.uploadAttachment);
 
 module.exports = router;
