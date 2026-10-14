@@ -5,12 +5,9 @@
   "scripts": {
     "dev": "nodemon src/index.js",
     "start": "node src/index.js",
-    "db:push": "prisma db push",
-    "db:generate": "prisma generate",
-    "db:seed": "node src/prisma/seed.js"
+    "seed": "node scripts/seed.js"
   },
   "dependencies": {
-    "@prisma/client": "^5.22.0",
     "bcryptjs": "^2.4.3",
     "bootstrap": "5.3.8",
     "bootstrap-icons": "1.13.2",
@@ -21,18 +18,15 @@
     "ejs": "7.0.1",
     "exceljs": "^4.4.0",
     "express": "^4.21.1",
-    "express-validator": "^7.2.0",
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
     "method-override": "3.0.0",
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.1",
     "mysql2": "3.24.6",
-    "pdfkit": "^0.15.0",
     "sequelize": "6.37.8"
   },
   "devDependencies": {
-    "nodemon": "^3.1.7",
-    "prisma": "^5.22.0"
+    "nodemon": "^3.1.7"
   }
 }

@@ -1,5 +1,10 @@
-const prisma  = require('../lib/prisma');
-const { log } = require('../lib/activityLog');
+'use strict';
+const { Op } = require('sequelize');
+const {
+  sequelize,
+  Task, TaskAssignment, TaskStageHistory, ActivityLog,
+  WorkflowStage, Employee, User,
+} = require('../models');
 const { send } = require('../lib/notify');
 
 let running = false;
@@ -13,33 +18,38 @@ const runOverdueJob = async () => {
 
   try {
     // Look up the Overdue stage by name. Never create it.
-    const overdueStage = await prisma.workflowStage.findFirst({ where: { stage_name: 'Overdue' } });
+    const overdueStage = await WorkflowStage.findOne({ where: { stage_name: 'Overdue' } });
     if (!overdueStage) {
       console.warn('[overdueJob] Overdue stage not found in workflow_stages. Skipping.');
       return;
     }
 
-    // Look up eligible source stages (Pending, In Progress only).
-    const eligibleStages = await prisma.workflowStage.findMany({
-      where: { stage_name: { in: ['Pending', 'In Progress'] } },
+    // Eligible source stages: Pending and In Progress only.
+    const eligibleStages = await WorkflowStage.findAll({
+      where: { stage_name: { [Op.in]: ['Pending', 'In Progress'] } },
     });
     const eligibleIds = eligibleStages.map(s => s.stage_id);
 
-    // Start of today (server local midnight) so tasks due today are NOT yet overdue.
+    // Start of today (server local midnight) — tasks due today are NOT yet overdue.
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Find all eligible tasks.
-    const tasks = await prisma.task.findMany({
+    // Find all eligible tasks, including assignee users and creator.
+    const tasks = await Task.findAll({
       where: {
         is_deleted: false,
-        stage_id:   { in: eligibleIds },
-        due_date:   { lt: today },
+        stage_id:   { [Op.in]: eligibleIds },
+        due_date:   { [Op.lt]: today },
       },
-      include: {
-        assignments: { include: { employee: { include: { user: true } } } },
-        creator:     true,
-      },
+      include: [
+        {
+          model: TaskAssignment, as: 'assignments',
+          include: [{
+            model: Employee, as: 'employee',
+            include: [{ model: User, as: 'user', attributes: ['id'] }],
+          }],
+        },
+      ],
     });
 
     if (tasks.length === 0) {
@@ -51,32 +61,28 @@ const runOverdueJob = async () => {
 
     for (const task of tasks) {
       try {
-        // Single transaction: update stage + write stage history + activity log.
-        await prisma.$transaction(async tx => {
-          await tx.task.update({
-            where: { task_id: task.task_id },
-            data:  { stage_id: overdueStage.stage_id, updated_by_user_id: task.created_by_user_id },
-          });
+        // Single transaction per task: update stage + stage history + activity log.
+        await sequelize.transaction(async tx => {
+          await task.update(
+            { stage_id: overdueStage.stage_id, updated_by_user_id: task.created_by_user_id },
+            { transaction: tx },
+          );
 
-          await tx.taskStageHistory.create({
-            data: {
-              task_id:            task.task_id,
-              changed_by_user_id: task.created_by_user_id,
-              old_stage_id:       task.stage_id,
-              new_stage_id:       overdueStage.stage_id,
-              remarks:            'Automatically marked overdue.',
-            },
-          });
+          await TaskStageHistory.create({
+            task_id:            task.task_id,
+            changed_by_user_id: task.created_by_user_id,
+            old_stage_id:       task.stage_id,  // captured before update
+            new_stage_id:       overdueStage.stage_id,
+            remarks:            'Automatically marked overdue.',
+          }, { transaction: tx });
 
-          await tx.activityLog.create({
-            data: {
-              user_id:        task.created_by_user_id,
-              action_type:    'update',
-              description:    `Task ${task.task_id} automatically marked overdue.`,
-              table_affected: 'tasks',
-              record_id:      task.task_id,
-            },
-          });
+          await ActivityLog.create({
+            user_id:        task.created_by_user_id,
+            action_type:    'update',
+            description:    `Task ${task.task_id} automatically marked overdue.`,
+            table_affected: 'tasks',
+            record_id:      task.task_id,
+          }, { transaction: tx });
         });
 
         // Notify assigned employees + the creator (deduplicated).
