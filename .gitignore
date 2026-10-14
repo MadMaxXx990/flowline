@@ -4,7 +4,6 @@ node_modules/
 # Environment variables — never commit real secrets
 .env
 server/.env
-client/.env
 
 # Uploaded files — keep the directory via .gitkeep
 server/uploads/*
@@ -12,7 +11,6 @@ server/uploads/*
 
 # Build output
 dist/
-client/dist/
 
 # Logs
 *.log

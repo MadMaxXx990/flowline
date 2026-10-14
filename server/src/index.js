@@ -10,7 +10,6 @@ if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
 }
 
 const express        = require('express');
-const cors           = require('cors');
 const helmet         = require('helmet');
 const morgan         = require('morgan');
 const path           = require('path');
@@ -39,7 +38,6 @@ app.use(helmet({
     },
   },
 }));
-app.use(cors({ origin: process.env.CLIENT_URL, credentials: true }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan('dev'));
@@ -57,12 +55,10 @@ app.use('/vendor/bootstrap',        express.static(path.join(__dirname, '..', 'n
 app.use('/vendor/bootstrap-icons',  express.static(path.join(__dirname, '..', 'node_modules', 'bootstrap-icons', 'font')));
 app.use('/vendor/chart.js',         express.static(path.join(__dirname, '..', 'node_modules', 'chart.js', 'dist')));
 
-// ── Static uploads ── removed: files are served through the authenticated /api/files route ──
-
 // ── Shared authenticated routes (any logged-in role) ─────────────────────────
 // Profile photo — available to any authenticated user, no role restriction
 app.get('/employees/:id/photo', require('./middleware/auth').authenticate, require('./controllers/employeeController').photo);
-// Attachment download — authenticated; permission check enforced in controller
+// Attachments are served through the authenticated /attachments/:id/download route
 app.get('/attachments/:id/download', require('./middleware/auth').authenticate, require('./controllers/attachmentController').download);
 
 // ── Page routes (EJS) ─────────────────────────────────────────────────────────
@@ -71,19 +67,12 @@ app.use('/admin',     require('./routes/admin'));
 app.use('/manager',   require('./routes/manager'));
 app.use('/employee',  require('./routes/employee'));
 
-// ── API routes (JSON — legacy Prisma routes removed; old React client may not function) ──
-// react-prisma-final tag is the fallback for the old React client.
-// /api/tasks  — removed (Phase 4a)
-// /api/employees, /api/departments, /api/teams, /api/positions — removed (Phase 5)
-// /api/attendance, /api/files, /api/notifications, /api/reports,
-// /api/activity-logs, /api/dashboard — removed (Phase 6)
-
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/api/health', (_, res) => res.json({ status: 'ok', timestamp: new Date() }));
 
 // ── 404 — API paths return JSON; page paths render the 404 view ───────────────
 app.use((req, res) => {
-  if (req.path.startsWith('/api/')) {
+  if (req.originalUrl.startsWith('/api/')) {
     return res.status(404).json({ error: 'Route not found' });
   }
   return res.status(404).render('errors/404');
