@@ -51,12 +51,44 @@ const taskInclude = [
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-const PRIORITIES = [
-  { priority_id: 1, priority_name: 'Low' },
-  { priority_id: 2, priority_name: 'Medium' },
-  { priority_id: 3, priority_name: 'High' },
-];
 
+/** Delete any files already uploaded by multer if we abort the request. */
+function cleanupUploads(req) {
+  const fs   = require('fs');
+  const path = require('path');
+  const dir  = path.join(__dirname, '../../uploads');
+  const files = req.file ? [req.file] : (req.files || []);
+  for (const f of files) {
+    const fp = path.join(dir, path.basename(f.filename || ''));
+    fs.unlink(fp, () => {});
+  }
+}
+
+/**
+ * Load a task with the given options, enforcing ownership rules:
+ *   Administrator → any non-deleted task
+ *   Manager       → only tasks they created (created_by_user_id === req.user.id)
+ *   Employee      → only tasks they are assigned to
+ * Returns the task instance or null (caller renders 404).
+ */
+async function loadTaskForUser(req, id, include = []) {
+  const task = await Task.findOne({
+    where:   { task_id: +id, is_deleted: false },
+    include,
+  });
+  if (!task) return null;
+
+  if (req.user.role === 'Manager') {
+    if (task.created_by_user_id !== req.user.id) return null;
+  } else if (req.user.role === 'Employee') {
+    const assigned = await TaskAssignment.findOne({
+      where: { task_id: +id, employee_id: +req.user.employeeId },
+    });
+    if (!assigned) return null;
+  }
+  // Administrator: no extra check
+  return task;
+}
 const STAGE_COLORS = {
   'Pending':     '#9ca3af',
   'In Progress': '#3b82f6',
@@ -66,7 +98,7 @@ const STAGE_COLORS = {
 };
 
 async function loadFormData() {
-  const [employees, teams, stages] = await Promise.all([
+  const [employees, teams, stages, priorities] = await Promise.all([
     Employee.findAll({
       where: { is_deleted: false },
       include: [{ model: Department, as: 'department' }],
@@ -82,8 +114,9 @@ async function loadFormData() {
       order: [['team_name', 'ASC']],
     }),
     WorkflowStage.findAll({ order: [['step_order', 'ASC']] }),
+    TaskPriority.findAll({ order: [['priority_id', 'ASC']] }),
   ]);
-  return { employees, teams, stages, priorities: PRIORITIES };
+  return { employees, teams, stages, priorities };
 }
 
 // ── BOARD ─────────────────────────────────────────────────────────────────────
@@ -131,6 +164,7 @@ const board = async (req, res) => {
 
   // Group by stage
   const allStages = await WorkflowStage.findAll({ order: [['step_order', 'ASC']] });
+  const priorities = await TaskPriority.findAll({ order: [['priority_id', 'ASC']] });
   const grouped = {};
   allStages.forEach(s => { grouped[s.stage_name] = []; });
   tasks.forEach(t => {
@@ -154,7 +188,7 @@ const board = async (req, res) => {
     grouped, allStages, STAGE_COLORS,
     canManage,
     employees: depts,
-    priorities: PRIORITIES,
+    priorities,
     query: { search: search || '', priority_id: priority_id || '', stage_id: stage_id || '', employee_id: employee_id || '' },
   });
 };
@@ -184,20 +218,41 @@ const store = async (req, res) => {
   const basePath = req.user.role === 'Administrator' ? '/admin' : '/manager';
 
   const formData   = await loadFormData();
-  const renderError = (msg) => res.status(422).render('tasks/new', {
-    role: req.user.role, basePath, user: req.user,
-    currentPath: `${basePath}/tasks`,
-    ...formData,
-    formValues: { ...req.body, employee_ids },
-    error: msg,
-  });
+  const renderError = (msg) => {
+    cleanupUploads(req);
+    return res.status(422).render('tasks/new', {
+      role: req.user.role, basePath, user: req.user,
+      currentPath: `${basePath}/tasks`,
+      ...formData,
+      formValues: { ...req.body, employee_ids },
+      error: msg,
+    });
+  };
 
   // ── Validation ──
   if (!task_title || !task_title.trim())  return renderError('Task title is required.');
   if (!priority_id)                        return renderError('Priority is required.');
   if (!due_date)                           return renderError('Due date is required.');
+  if (start_date && !/^\d{4}-\d{2}-\d{2}$/.test(start_date)) return renderError('Start date must be a valid date (YYYY-MM-DD).');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(due_date)) return renderError('Due date must be a valid date (YYYY-MM-DD).');
   if (start_date && due_date && new Date(start_date) > new Date(due_date)) {
     return renderError('Start date cannot be after the due date.');
+  }
+
+  // Validate priority_id exists in the database (handles fresh DB with non-1..3 IDs)
+  const priorityRow = await TaskPriority.findOne({ where: { priority_id: +priority_id } });
+  if (!priorityRow) return renderError('Selected priority does not exist.');
+
+  // Deduplicate employee_ids and verify each exists and is not deleted
+  const uniqueIds = [...new Set(employee_ids.filter(id => !isNaN(id) && id > 0))];
+  if (uniqueIds.length > 0) {
+    const validEmps = await Employee.findAll({
+      where: { employee_id: { [Op.in]: uniqueIds }, is_deleted: false },
+      attributes: ['employee_id'],
+    });
+    if (validEmps.length !== uniqueIds.length) {
+      return renderError('One or more selected employees do not exist or have been archived.');
+    }
   }
 
   const pendingStage = await WorkflowStage.findOne({ where: { stage_name: 'Pending' } });
@@ -222,7 +277,7 @@ const store = async (req, res) => {
 
   // Assignments + notifications
   const notifyUserIds = [];
-  for (const empId of employee_ids) {
+  for (const empId of uniqueIds) {
     await TaskAssignment.create({
       task_id:             task.task_id,
       employee_id:         empId,
@@ -267,7 +322,15 @@ const store = async (req, res) => {
 // ── SHOW ──────────────────────────────────────────────────────────────────────
 const show = async (req, res) => {
   const id    = +req.params.id;
-  const task  = await Task.findOne({
+  const task  = await loadTaskForUser(req, id, [
+    ...taskInclude,
+  ]);
+  // Re-fetch with full includes (loadTaskForUser fetched with the include list)
+  // Actually we need the full deep include — use a dedicated fetch after access check.
+  if (!task) return res.status(404).render('errors/404');
+
+  // Re-load with full taskInclude since loadTaskForUser used it
+  const fullTask = await Task.findOne({
     where:   { task_id: id, is_deleted: false },
     include: taskInclude,
     order:   [
@@ -277,14 +340,7 @@ const show = async (req, res) => {
       [{ model: Approval,         as: 'approvals'    }, 'requested_at','DESC'],
     ],
   });
-
-  if (!task) return res.status(404).render('errors/404');
-
-  // Employees may only view tasks assigned to them
-  if (req.user.role === 'Employee') {
-    const assigned = task.assignments.some(a => a.employee_id === +req.user.employeeId);
-    if (!assigned) return res.status(404).render('errors/404');
-  }
+  if (!fullTask) return res.status(404).render('errors/404');
 
   const basePath  = req.user.role === 'Administrator' ? '/admin'
                   : req.user.role === 'Manager'       ? '/manager'
@@ -296,19 +352,16 @@ const show = async (req, res) => {
   res.render('tasks/show', {
     role: req.user.role, basePath, user: req.user,
     currentPath: `${basePath}/tasks`,
-    task, canManage, allStages,
+    task: fullTask, canManage, allStages,
   });
 };
 
 // ── EDIT FORM ─────────────────────────────────────────────────────────────────
 const editForm = async (req, res) => {
-  const task = await Task.findOne({
-    where:   { task_id: +req.params.id, is_deleted: false },
-    include: [
-      { model: TaskAssignment, as: 'assignments' },
-      { model: WorkflowStage,  as: 'stage' },
-    ],
-  });
+  const task = await loadTaskForUser(req, req.params.id, [
+    { model: TaskAssignment, as: 'assignments' },
+    { model: WorkflowStage,  as: 'stage' },
+  ]);
   if (!task) return res.status(404).render('errors/404');
 
   const basePath = req.user.role === 'Administrator' ? '/admin' : '/manager';
@@ -340,10 +393,7 @@ const update = async (req, res) => {
     ? rawIds.map(Number)
     : rawIds ? String(rawIds).split(',').map(Number).filter(Boolean) : [];
 
-  const task = await Task.findOne({
-    where:   { task_id: id, is_deleted: false },
-    include: [{ model: TaskAssignment, as: 'assignments' }],
-  });
+  const task = await loadTaskForUser(req, id, [{ model: TaskAssignment, as: 'assignments' }]);
   if (!task) return res.status(404).render('errors/404');
 
   const basePath = req.user.role === 'Administrator' ? '/admin' : '/manager';
@@ -359,8 +409,24 @@ const update = async (req, res) => {
   if (!task_title || !task_title.trim())  return renderError('Task title is required.');
   if (!priority_id)                        return renderError('Priority is required.');
   if (!due_date)                           return renderError('Due date is required.');
+  if (start_date && !/^\d{4}-\d{2}-\d{2}$/.test(start_date)) return renderError('Start date must be a valid date (YYYY-MM-DD).');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(due_date)) return renderError('Due date must be a valid date (YYYY-MM-DD).');
   if (start_date && due_date && new Date(start_date) > new Date(due_date)) {
     return renderError('Start date cannot be after the due date.');
+  }
+
+  const priorityRow = await TaskPriority.findOne({ where: { priority_id: +priority_id } });
+  if (!priorityRow) return renderError('Selected priority does not exist.');
+
+  const uniqueIds = [...new Set(employee_ids.filter(id => !isNaN(id) && id > 0))];
+  if (uniqueIds.length > 0) {
+    const validEmps = await Employee.findAll({
+      where: { employee_id: { [Op.in]: uniqueIds }, is_deleted: false },
+      attributes: ['employee_id'],
+    });
+    if (validEmps.length !== uniqueIds.length) {
+      return renderError('One or more selected employees do not exist or have been archived.');
+    }
   }
 
   // Whitelist — only these fields updated
@@ -373,10 +439,10 @@ const update = async (req, res) => {
     updated_by_user_id: req.user.id,
   });
 
-  // Sync assignments — same logic as original
+  // Sync assignments — same logic as original, using deduplicated+validated ids
   const existing = task.assignments.map(a => a.employee_id);
-  const toRemove = existing.filter(eid => !employee_ids.includes(eid));
-  const toAdd    = employee_ids.filter(eid => !existing.includes(eid));
+  const toRemove = existing.filter(eid => !uniqueIds.includes(eid));
+  const toAdd    = uniqueIds.filter(eid => !existing.includes(eid));
 
   if (toRemove.length) {
     await TaskAssignment.destroy({
@@ -400,6 +466,8 @@ const update = async (req, res) => {
 const destroy = async (req, res) => {
   const id       = +req.params.id;
   const basePath = req.user.role === 'Administrator' ? '/admin' : '/manager';
+  const task = await loadTaskForUser(req, id);
+  if (!task) return res.status(404).render('errors/404');
   await Task.update({ is_deleted: true }, { where: { task_id: id } });
   await log(req.user.id, 'delete', `Deleted task id ${id}`, 'tasks', id);
   setFlash(res, 'success', 'Task deleted.');
@@ -413,12 +481,16 @@ const changeStage = async (req, res) => {
   const basePath = req.user.role === 'Administrator' ? '/admin' : '/manager';
   const { stage_id, remarks } = req.body;
 
-  const task = await Task.findOne({
-    where:   { task_id: id, is_deleted: false },
-    include: [{ model: TaskAssignment, as: 'assignments',
-      include: [{ model: Employee, as: 'employee', include: [{ model: User, as: 'user' }] }] }],
-  });
+  const task = await loadTaskForUser(req, id, [{ model: TaskAssignment, as: 'assignments',
+      include: [{ model: Employee, as: 'employee', include: [{ model: User, as: 'user' }] }] }]);
   if (!task) return res.status(404).render('errors/404');
+
+  // Validate stage_id exists
+  const stageExists = await WorkflowStage.findOne({ where: { stage_id: +stage_id } });
+  if (!stageExists) {
+    setFlash(res, 'danger', 'Invalid stage selected.');
+    return res.redirect(`${basePath}/tasks/${id}`);
+  }
 
   const { sequelize } = require('../models');
   await sequelize.transaction(async tx => {
@@ -443,18 +515,27 @@ const changeStage = async (req, res) => {
 };
 
 // ── APPROVE / RETURN (Administrator + Manager) ────────────────────────────────
-// approval_status = 'Approved' → Completed; anything else → 'In Progress'
-// Remarks are not required (original behaviour).
+// approval_status must be exactly 'Approved' or 'Revision Requested'.
+// Remarks are required when returning (employee needs to know why).
 const approve = async (req, res) => {
   const id       = +req.params.id;
   const basePath = req.user.role === 'Administrator' ? '/admin' : '/manager';
   const { approval_status, remarks } = req.body;
 
-  const task = await Task.findOne({
-    where:   { task_id: id, is_deleted: false },
-    include: [{ model: TaskAssignment, as: 'assignments',
-      include: [{ model: Employee, as: 'employee', include: [{ model: User, as: 'user' }] }] }],
-  });
+  // Validate approval_status
+  const VALID_STATUSES = ['Approved', 'Revision Requested'];
+  if (!VALID_STATUSES.includes(approval_status)) {
+    setFlash(res, 'danger', 'Invalid approval status.');
+    return res.redirect(`${basePath}/tasks/${id}`);
+  }
+  // Require remarks when returning for revision
+  if (approval_status === 'Revision Requested' && (!remarks || !remarks.trim())) {
+    setFlash(res, 'danger', 'Remarks are required when requesting a revision.');
+    return res.redirect(`${basePath}/tasks/${id}`);
+  }
+
+  const task = await loadTaskForUser(req, id, [{ model: TaskAssignment, as: 'assignments',
+      include: [{ model: Employee, as: 'employee', include: [{ model: User, as: 'user' }] }] }]);
   if (!task) return res.status(404).render('errors/404');
 
   const stageName = approval_status === 'Approved' ? 'Completed' : 'In Progress';
@@ -585,16 +666,10 @@ const addComment = async (req, res) => {
     return res.redirect('back');
   }
 
-  const task = await Task.findOne({ where: { task_id: id, is_deleted: false } });
+  const task = await loadTaskForUser(req, id);
   if (!task) return res.status(404).render('errors/404');
 
-  // Employees may only comment on tasks assigned to them
-  if (req.user.role === 'Employee') {
-    const assigned = await TaskAssignment.findOne({
-      where: { task_id: id, employee_id: +req.user.employeeId },
-    });
-    if (!assigned) return res.status(404).render('errors/404');
-  }
+  // (loadTaskForUser already enforces Employee assignment; no extra check needed)
 
   await TaskComment.create({ task_id: id, user_id: req.user.id, comment_text: comment_text.trim() });
 
@@ -610,7 +685,11 @@ const deleteComment = async (req, res) => {
   const cid = +req.params.cid;
   const basePath = req.user.role === 'Administrator' ? '/admin' : '/manager';
 
-  await TaskComment.update({ is_deleted: true }, { where: { comment_id: cid } });
+  const task = await loadTaskForUser(req, id);
+  if (!task) return res.status(404).render('errors/404');
+
+  // Verify the comment belongs to this task
+  await TaskComment.update({ is_deleted: true }, { where: { comment_id: cid, task_id: id } });
 
   return res.redirect(`${basePath}/tasks/${id}`);
 };
@@ -625,16 +704,10 @@ const uploadAttachment = async (req, res) => {
     return res.redirect('back');
   }
 
-  const task = await Task.findOne({ where: { task_id: id, is_deleted: false } });
+  const task = await loadTaskForUser(req, id);
   if (!task) return res.status(404).render('errors/404');
 
-  // Employees may only attach to tasks assigned to them
-  if (req.user.role === 'Employee') {
-    const assigned = await TaskAssignment.findOne({
-      where: { task_id: id, employee_id: +req.user.employeeId },
-    });
-    if (!assigned) return res.status(404).render('errors/404');
-  }
+  // (loadTaskForUser already enforces Employee assignment)
 
   await Attachment.create({
     task_id:             id,

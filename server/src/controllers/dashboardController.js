@@ -5,13 +5,12 @@ const {
   WorkflowStage, TaskPriority, Department,
   Employee, User, Attendance, Notification,
 } = require('../models');
+const { localDateStr, startOfLocalDay } = require('../lib/dates');
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 /** Return the start of today (midnight, server local time) */
-function startOfToday() {
-  const d = new Date(); d.setHours(0, 0, 0, 0); return d;
-}
+function startOfToday() { return startOfLocalDay(); }
 
 /** Build a 7-day completions array (aggregate, not row-scan) */
 async function weeklyCompletions(taskWhere, completedId) {
@@ -25,12 +24,12 @@ async function weeklyCompletions(taskWhere, completedId) {
   });
   const map = {};
   rows.forEach(r => {
-    const key = new Date(r.updated_at).toISOString().split('T')[0];
+    const key = localDateStr(new Date(r.updated_at));  // local date of completion
     map[key] = (map[key] || 0) + 1;
   });
   return Array.from({ length: 7 }, (_, i) => {
     const d = new Date(); d.setDate(d.getDate() - (6 - i));
-    const key = d.toISOString().split('T')[0];
+    const key = localDateStr(d);  // local date key — matches the grouping above
     return { date: key, label: d.toLocaleDateString('en', { weekday: 'short' }), count: map[key] || 0 };
   });
 }
@@ -78,7 +77,7 @@ const admin = async (req, res) => {
   // Admin extras
   const [totalEmployees, presentToday, forReviewCount] = await Promise.all([
     Employee.count({ where: { is_deleted: false } }),
-    Attendance.count({ where: { date: startOfToday().toISOString().split('T')[0], attendance_status: 'Present' } }),
+    Attendance.count({ where: { date: localDateStr(), attendance_status: 'Present' } }),
     Task.count({ where: { ...taskWhere, stage_id: forReviewId } }),
   ]);
 

@@ -189,9 +189,9 @@ const reset = async (req, res) => {
       token: token || '',
     });
   }
-  if (new_password.length < 6) {
+  if (new_password.length < 8) {
     return res.status(400).render('auth/reset', {
-      error: 'Password must be at least 6 characters.',
+      error: 'Password must be at least 8 characters.',
       success: false,
       token,
     });

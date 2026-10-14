@@ -5,6 +5,7 @@ const {
   Task, TaskAssignment, TaskPriority, WorkflowStage,
   Employee, Department, Team, Attendance,
 } = require('../models');
+const { localDateStr, startOfLocalDay, endOfLocalDay, parseLocalDate } = require('../lib/dates');
 
 const PAGE_SIZE = 20;
 
@@ -20,9 +21,9 @@ function safe(v) {
 async function buildReportData(req) {
   const { date_from, date_to, department_id, team_id, stage_id, priority_id, employee_id } = req.query;
 
-  const from = date_from ? new Date(date_from) : new Date(new Date().setDate(1));
-  const to   = date_to   ? new Date(date_to)   : new Date();
-  to.setHours(23, 59, 59, 999);
+  // Parse dates as local start/end of day so filtering is accurate in any timezone
+  const from = parseLocalDate(date_from) || startOfLocalDay(new Date(new Date().setDate(1)));
+  const to   = parseLocalDate(date_to)   ? endOfLocalDay(parseLocalDate(date_to)) : endOfLocalDay();
 
   // Base task scope
   const taskWhere = { is_deleted: false, created_at: { [Op.between]: [from, to] } };
@@ -65,6 +66,7 @@ async function buildReportData(req) {
   const empWhere = { is_deleted: false };
   if (department_id) empWhere.department_id = +department_id;
   if (team_id)       empWhere.team_id        = +team_id;
+  if (employee_id)   empWhere.employee_id    = +employee_id;  // respect the employee filter
 
   const employees = await Employee.findAll({
     where: empWhere,
@@ -86,11 +88,15 @@ async function buildReportData(req) {
   }));
   performance.sort((a, b) => b.completion_rate - a.completion_rate);
 
-  // Attendance summary (all employees in scope, within date range)
+  // Attendance summary — respect the same employee scope as the performance table
+  const attEmpIds = employees.map(e => e.employee_id);
+  const attWhere = { date: { [Op.between]: [from, to] } };
+  if (attEmpIds.length > 0) attWhere.employee_id = { [Op.in]: attEmpIds };
+
   const { sequelize } = require('../models');
   const attSummary = await require('../models').Attendance.findAll({
     attributes: ['attendance_status', [sequelize.fn('COUNT', sequelize.col('attendance_id')), 'cnt']],
-    where: { date: { [Op.between]: [from, to] } },
+    where: attWhere,
     group: ['attendance_status'],
     raw: true,
   });
@@ -98,8 +104,8 @@ async function buildReportData(req) {
   return {
     totalTasks, completedTasks, overdueTasks, completionRate,
     stageCounts, priorityCounts, performance, attSummary,
-    dateFrom: from.toISOString().split('T')[0],
-    dateTo:   to.toISOString().split('T')[0],
+    dateFrom: localDateStr(from),
+    dateTo:   localDateStr(to),
   };
 }
 

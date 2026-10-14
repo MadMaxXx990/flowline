@@ -1,15 +1,14 @@
 'use strict';
 const { Op } = require('sequelize');
 const { Attendance, Employee, Department } = require('../models');
-const { log }      = require('../lib/activityLog');
-const { setFlash } = require('../middleware/flash');
+const { log }          = require('../lib/activityLog');
+const { setFlash }     = require('../middleware/flash');
+const { localDateStr } = require('../lib/dates');
 
 const PAGE_SIZE = 20;
 
-/** Return YYYY-MM-DD string for today (server local time) */
-function todayStr() {
-  return new Date().toISOString().split('T')[0];
-}
+/** Return YYYY-MM-DD string for today in server local time. */
+function todayStr() { return localDateStr(); }
 
 /** HH:MM string for the current time */
 function nowTime() {

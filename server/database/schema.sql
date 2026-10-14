@@ -24,7 +24,7 @@ CREATE TABLE `activity_logs` (
   PRIMARY KEY (`log_id`),
   KEY `activity_logs_user_id_fkey` (`user_id`),
   CONSTRAINT `activity_logs_user_id_fkey` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON UPDATE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=29 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `approvals`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
@@ -96,7 +96,7 @@ CREATE TABLE `departments` (
   `updated_at` datetime(3) NOT NULL,
   PRIMARY KEY (`department_id`),
   UNIQUE KEY `departments_department_name_key` (`department_name`)
-) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `employees`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
@@ -129,7 +129,7 @@ CREATE TABLE `employees` (
   CONSTRAINT `employees_position_id_fkey` FOREIGN KEY (`position_id`) REFERENCES `positions` (`position_id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `employees_supervisor_id_fkey` FOREIGN KEY (`supervisor_id`) REFERENCES `employees` (`employee_id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `employees_team_id_fkey` FOREIGN KEY (`team_id`) REFERENCES `teams` (`team_id`) ON DELETE SET NULL ON UPDATE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `notifications`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
@@ -163,7 +163,7 @@ CREATE TABLE `positions` (
   `updated_at` datetime(3) NOT NULL,
   PRIMARY KEY (`position_id`),
   UNIQUE KEY `positions_position_name_key` (`position_name`)
-) ENGINE=InnoDB AUTO_INCREMENT=5 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `roles`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
@@ -174,7 +174,7 @@ CREATE TABLE `roles` (
   `description` varchar(191) DEFAULT NULL,
   PRIMARY KEY (`role_id`),
   UNIQUE KEY `roles_role_name_key` (`role_name`)
-) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `task_assignments`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
@@ -224,7 +224,7 @@ CREATE TABLE `task_priorities` (
   `updated_at` datetime(3) NOT NULL,
   PRIMARY KEY (`priority_id`),
   UNIQUE KEY `task_priorities_priority_name_key` (`priority_name`)
-) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `task_stage_history`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
@@ -338,7 +338,7 @@ CREATE TABLE `users` (
   KEY `users_role_id_fkey` (`role_id`),
   CONSTRAINT `users_employee_id_fkey` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`employee_id`) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT `users_role_id_fkey` FOREIGN KEY (`role_id`) REFERENCES `roles` (`role_id`) ON DELETE SET NULL ON UPDATE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=4 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `workflow_stages`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
@@ -353,7 +353,7 @@ CREATE TABLE `workflow_stages` (
   PRIMARY KEY (`stage_id`),
   UNIQUE KEY `workflow_stages_stage_name_key` (`stage_name`),
   UNIQUE KEY `workflow_stages_step_order_key` (`step_order`)
-) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 

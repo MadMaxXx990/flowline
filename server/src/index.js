@@ -1,4 +1,7 @@
 require('dotenv').config();
+// Patches all async route handlers so unhandled promise rejections flow to
+// the Express error handler instead of crashing the process.
+require('express-async-errors');
 
 // ── Startup checks ────────────────────────────────────────────────────────────
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
@@ -79,9 +82,45 @@ app.use((req, res) => {
 });
 
 // ── Error handler ─────────────────────────────────────────────────────────────
-app.use((err, _req, res, _next) => {
-  console.error(err);
-  res.status(err.status || 500).json({ error: err.message || 'Internal server error' });
+// Catches: thrown errors in routes, Multer errors, and any async throw caught by
+// express-async-errors. Never exposes stack traces to the browser.
+const path_mod = path; // alias — path already required above
+const { isApiRequest } = require('./middleware/auth');
+const { setFlash: _sf } = require('./middleware/flash');
+const fs_mod = require('fs');
+
+app.use((err, req, res, _next) => {
+  console.error('[error]', err.message || err);
+
+  // ── Multer errors (file type / file size) ──────────────────────────────────
+  // Clean up any partially-written file, flash a message, redirect back.
+  if (err.code === 'LIMIT_FILE_SIZE' || (err.message && err.message.startsWith('File type not allowed'))) {
+    if (req.file) {
+      const fp = path_mod.join(__dirname, '..', 'uploads', path_mod.basename(req.file.filename || ''));
+      fs_mod.unlink(fp, () => {});
+    }
+    if (req.files) {
+      for (const f of req.files) {
+        const fp = path_mod.join(__dirname, '..', 'uploads', path_mod.basename(f.filename || ''));
+        fs_mod.unlink(fp, () => {});
+      }
+    }
+    _sf(res, 'danger', err.code === 'LIMIT_FILE_SIZE'
+      ? 'File is too large. Maximum size is 10 MB.'
+      : 'File type not allowed. Accepted: PDF, Word, Excel, PowerPoint, TXT, CSV, PNG, JPG.');
+    return res.redirect('back');
+  }
+
+  // ── All other errors ───────────────────────────────────────────────────────
+  const status = err.status || err.statusCode || 500;
+  if (isApiRequest(req)) {
+    return res.status(status).json({ error: err.message || 'Internal server error' });
+  }
+  try {
+    return res.status(status).render('errors/500');
+  } catch {
+    return res.status(status).send('Internal server error');
+  }
 });
 
 const { runOverdueJob } = require('./jobs/overdueJob');
@@ -131,6 +170,16 @@ async function checkModels() {
     console.error('[Sequelize] Startup check failed:', err.message);
   }
 }
+
+// ── Process-level safety net ──────────────────────────────────────────────────
+// Log and survive — never crash the server on a stray rejection.
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', err.message);
+  // Do NOT exit — keep the server running; express-async-errors handles routes.
+});
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
