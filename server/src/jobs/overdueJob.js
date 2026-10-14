@@ -63,6 +63,8 @@ const runOverdueJob = async () => {
       try {
         // Single transaction per task: update stage + stage history + activity log.
         await sequelize.transaction(async tx => {
+          const oldStageId = task.stage_id;  // capture BEFORE update mutates the instance
+
           await task.update(
             { stage_id: overdueStage.stage_id, updated_by_user_id: task.created_by_user_id },
             { transaction: tx },
@@ -71,7 +73,7 @@ const runOverdueJob = async () => {
           await TaskStageHistory.create({
             task_id:            task.task_id,
             changed_by_user_id: task.created_by_user_id,
-            old_stage_id:       task.stage_id,  // captured before update
+            old_stage_id:       oldStageId,             // uses pre-update value
             new_stage_id:       overdueStage.stage_id,
             remarks:            'Automatically marked overdue.',
           }, { transaction: tx });

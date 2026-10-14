@@ -2,18 +2,28 @@
 const jwt = require('jsonwebtoken');
 
 /**
- * Verify the JWT stored in the httpOnly cookie "fl_token".
- * - API paths (/api/...) get a JSON 401 on failure (preserves existing API behaviour).
- * - Page paths redirect to /login on failure.
- * On success, attaches the same req.user shape as before:
- *   { id, role, employeeId }
+ * Determine whether a request is an API call.
+ * Uses req.originalUrl (full URL) because req.path is router-relative
+ * and would be wrong inside nested routers (e.g. /dashboard instead of
+ * /admin/dashboard).
+ */
+const isApiRequest = req => req.originalUrl.startsWith('/api/');
+
+/**
+ * authenticate
+ *
+ * Reads the JWT from the httpOnly cookie "fl_token".
+ *
+ * - No cookie / invalid token:
+ *     API requests  → 401 JSON
+ *     Page requests → redirect to /login
+ * - Valid token: attaches req.user = { id, role, employeeId }, calls next().
  */
 const authenticate = (req, res, next) => {
   const token = req.cookies && req.cookies.fl_token;
-  const isApi = req.path.startsWith('/api/');
 
   if (!token) {
-    if (isApi) return res.status(401).json({ error: 'No token provided.' });
+    if (isApiRequest(req)) return res.status(401).json({ error: 'No token provided.' });
     return res.redirect('/login');
   }
 
@@ -21,26 +31,41 @@ const authenticate = (req, res, next) => {
     req.user = jwt.verify(token, process.env.JWT_SECRET);
     next();
   } catch {
-    if (isApi) return res.status(401).json({ error: 'Invalid or expired token.' });
+    if (isApiRequest(req)) return res.status(401).json({ error: 'Invalid or expired token.' });
     return res.redirect('/login');
   }
 };
 
 /**
- * Restrict access to specific roles.
+ * authorize(...roles)
+ *
+ * Must be called after authenticate (so req.user is always set when this runs).
+ *
+ * - req.user missing (should not happen after authenticate, but guard anyway):
+ *     API  → 401 JSON
+ *     Page → redirect to /login
+ *
+ * - Authenticated but WRONG role:
+ *     API  → 403 JSON
+ *     Page → HTTP 403 + render errors/403   ← NEVER redirect to /login
+ *
+ * - Correct role: calls next().
+ *
  * Usage: authorize('Administrator', 'Manager')
- * - API paths return JSON 403.
- * - Page paths render the 403 error view with status 403.
  */
 const authorize = (...roles) => (req, res, next) => {
   if (!req.user) {
-    if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'Not authenticated.' });
+    // Unauthenticated (defensive — authenticate should have caught this)
+    if (isApiRequest(req)) return res.status(401).json({ error: 'Not authenticated.' });
     return res.redirect('/login');
   }
+
   if (!roles.includes(req.user.role)) {
-    if (req.path.startsWith('/api/')) return res.status(403).json({ error: 'Access denied.' });
+    // Authenticated but wrong role — never redirect to /login
+    if (isApiRequest(req)) return res.status(403).json({ error: 'Access denied.' });
     return res.status(403).render('errors/403');
   }
+
   next();
 };
 

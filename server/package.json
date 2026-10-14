@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "nodemon src/index.js",
     "start": "node src/index.js",
-    "seed": "node scripts/seed.js"
+    "seed": "node scripts/seed.js",
+    "check:access": "node scripts/check-access.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
