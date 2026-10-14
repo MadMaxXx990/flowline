@@ -1,0 +1,109 @@
+<%- include('../partials/layout_start') %>
+
+<div class="page-heading mb-4">Administrator Dashboard</div>
+
+<!-- KPI row -->
+<div class="row g-3 mb-4">
+  <% const kpis = [
+    { label:'Employees',     value: totalEmployees,  icon:'bi-people-fill',         color:'#4f46e5' },
+    { label:'Active Tasks',  value: totalTasks - completedCount, icon:'bi-kanban-fill', color:'#3b82f6' },
+    { label:'Overdue',       value: overdueCount,    icon:'bi-alarm-fill',           color:'#ef4444' },
+    { label:'For Review',    value: forReviewCount,  icon:'bi-eye-fill',             color:'#f59e0b' },
+    { label:'Present Today', value: presentToday,    icon:'bi-calendar-check-fill',  color:'#10b981' },
+  ]; %>
+  <% kpis.forEach(k => { %>
+  <div class="col-6 col-md-4 col-xl">
+    <div class="card border-0 shadow-sm p-3 d-flex flex-row align-items-center gap-3">
+      <div class="rounded-3 d-flex align-items-center justify-content-center flex-shrink-0"
+           style="width:44px;height:44px;background:<%= k.color %>20;">
+        <i class="bi <%= k.icon %>" style="color:<%= k.color %>;font-size:1.2rem;"></i>
+      </div>
+      <div>
+        <div style="font-size:1.5rem;font-weight:700;line-height:1.1;"><%= k.value %></div>
+        <div class="text-muted small"><%= k.label %></div>
+      </div>
+    </div>
+  </div>
+  <% }) %>
+</div>
+
+<!-- Charts row -->
+<div class="row g-4 mb-4">
+  <!-- Weekly completions -->
+  <div class="col-lg-6">
+    <div class="card border-0 shadow-sm p-4">
+      <div class="fw-semibold small mb-3">Completed Tasks — Last 7 Days</div>
+      <canvas id="weeklyChart" height="160"
+              data-chart-type="bar"
+              data-chart-labels="<%- JSON.stringify(weeklyChart.map(d=>d.label)) %>"
+              data-chart-values="<%- JSON.stringify(weeklyChart.map(d=>d.count)) %>"
+              data-chart-color="#4f46e5"></canvas>
+    </div>
+  </div>
+  <!-- Stage breakdown -->
+  <div class="col-lg-3">
+    <div class="card border-0 shadow-sm p-4">
+      <div class="fw-semibold small mb-3">Tasks by Stage</div>
+      <canvas id="stageChart" height="200"
+              data-chart-type="doughnut"
+              data-chart-labels="<%- JSON.stringify(stageCounts.map(s=>s.stage)) %>"
+              data-chart-values="<%- JSON.stringify(stageCounts.map(s=>s.count)) %>"
+              data-chart-colors='["#9ca3af","#3b82f6","#f59e0b","#10b981","#ef4444"]'></canvas>
+    </div>
+  </div>
+  <!-- Priority breakdown -->
+  <div class="col-lg-3">
+    <div class="card border-0 shadow-sm p-4">
+      <div class="fw-semibold small mb-3">Tasks by Priority</div>
+      <canvas id="priorityChart" height="200"
+              data-chart-type="doughnut"
+              data-chart-labels="<%- JSON.stringify(priorityCounts.map(p=>p.priority)) %>"
+              data-chart-values="<%- JSON.stringify(priorityCounts.map(p=>p.count)) %>"
+              data-chart-colors='["#9ca3af","#f59e0b","#ef4444"]'></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- Department bar + Recent tasks -->
+<div class="row g-4 mb-4">
+  <div class="col-lg-5">
+    <div class="card border-0 shadow-sm p-4">
+      <div class="fw-semibold small mb-3">Tasks by Department</div>
+      <canvas id="deptChart" height="200"
+              data-chart-type="bar"
+              data-chart-labels="<%- JSON.stringify(deptCounts.map(d=>d.department)) %>"
+              data-chart-values="<%- JSON.stringify(deptCounts.map(d=>d.count)) %>"
+              data-chart-color="#4f46e5"></canvas>
+    </div>
+  </div>
+  <div class="col-lg-7">
+    <div class="card border-0 shadow-sm">
+      <div class="px-3 pt-3 pb-2 border-bottom fw-semibold small">Recent Tasks</div>
+      <table class="table table-hover align-middle mb-0 small">
+        <thead class="table-light"><tr><th>Title</th><th>Stage</th><th>Priority</th></tr></thead>
+        <tbody>
+          <% if (!recentTasks || !recentTasks.length) { %>
+            <tr><td colspan="3" class="text-center text-muted py-3">No tasks yet.</td></tr>
+          <% } %>
+          <% (recentTasks || []).forEach(t => { %>
+            <%
+              const sm = {Pending:'secondary','In Progress':'primary','For Review':'warning',Completed:'success',Overdue:'danger'};
+              const pm = {Low:'secondary',Medium:'warning',High:'danger'};
+              const sn = t.stage?.stage_name || '';
+              const pn = t.priority?.priority_name || '';
+            %>
+            <tr>
+              <td><a href="/admin/tasks/<%= t.task_id %>" class="text-decoration-none text-dark fw-semibold">
+                <%= t.task_title.length>40 ? t.task_title.slice(0,40)+'…' : t.task_title %>
+              </a></td>
+              <td><span class="badge bg-<%= sm[sn]||'secondary' %>-subtle text-<%= sm[sn]||'secondary' %> border"><%= sn %></span></td>
+              <td><span class="badge bg-<%= pm[pn]||'secondary' %>-subtle text-<%= pm[pn]||'secondary' %> border"><%= pn %></span></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<%- include('../partials/layout_end') %>

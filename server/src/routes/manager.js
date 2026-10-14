@@ -5,17 +5,24 @@ const upload  = require('../middleware/upload');
 const taskC   = require('../controllers/taskController');
 const attC    = require('../controllers/attachmentController');
 const notifC  = require('../controllers/notificationController');
+const dashC   = require('../controllers/dashboardController');
+const repC    = require('../controllers/reportsController');
+const attnC   = require('../controllers/attendanceController');
 
 // All manager routes require authentication and the Manager role.
 router.use(authenticate, authorize('Manager'));
 
-// ── Dashboard stub ────────────────────────────────────────────────────────────
-router.get('/dashboard', (req, res) => {
-  res.render('dashboard/index', {
-    role: 'Manager', basePath: '/manager', user: req.user,
-    currentPath: '/manager/dashboard',
-  });
-});
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+router.get('/dashboard', dashC.manager);
+
+// ── Attendance ────────────────────────────────────────────────────────────────
+router.get('/attendance',      attnC.index);
+router.post('/attendance',     attnC.store);
+router.post('/attendance/:id', attnC.update);  // ?_method=PUT
+
+// ── Reports ───────────────────────────────────────────────────────────────────
+router.get('/reports',              repC.index);
+router.get('/reports/export/excel', repC.exportExcel);
 
 // ── Notifications ─────────────────────────────────────────────────────────────
 router.get('/notifications',             notifC.index);

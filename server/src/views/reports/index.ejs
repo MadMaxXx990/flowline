@@ -1,0 +1,161 @@
+<%- include('../partials/layout_start') %>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div class="page-heading">Reports</div>
+  <a href="<%= basePath %>/reports/export/excel?<%= new URLSearchParams(query).toString() %>"
+     class="btn btn-sm btn-success">
+    <i class="bi bi-file-earmark-excel me-1"></i>Export Excel
+  </a>
+</div>
+
+<!-- Filter form -->
+<div class="card border-0 shadow-sm p-3 mb-4">
+  <form method="GET" action="<%= basePath %>/reports" class="row g-2 align-items-end">
+    <div class="col-6 col-md-3 col-lg-2">
+      <label class="form-label small fw-semibold mb-1">From</label>
+      <input type="date" name="date_from" class="form-control form-control-sm" value="<%= query.date_from %>" />
+    </div>
+    <div class="col-6 col-md-3 col-lg-2">
+      <label class="form-label small fw-semibold mb-1">To</label>
+      <input type="date" name="date_to" class="form-control form-control-sm" value="<%= query.date_to %>" />
+    </div>
+    <% if (role === 'Administrator') { %>
+    <div class="col-6 col-md-3 col-lg-2">
+      <label class="form-label small fw-semibold mb-1">Department</label>
+      <select name="department_id" class="form-select form-select-sm">
+        <option value="">All</option>
+        <% (departments||[]).forEach(d => { %><option value="<%= d.department_id %>" <%= query.department_id==d.department_id?'selected':'' %>><%= d.department_name %></option><% }) %>
+      </select>
+    </div>
+    <div class="col-6 col-md-3 col-lg-2">
+      <label class="form-label small fw-semibold mb-1">Team</label>
+      <select name="team_id" class="form-select form-select-sm">
+        <option value="">All</option>
+        <% (teams||[]).forEach(t => { %><option value="<%= t.team_id %>" <%= query.team_id==t.team_id?'selected':'' %>><%= t.team_name %></option><% }) %>
+      </select>
+    </div>
+    <% } %>
+    <div class="col-6 col-md-3 col-lg-2">
+      <label class="form-label small fw-semibold mb-1">Stage</label>
+      <select name="stage_id" class="form-select form-select-sm">
+        <option value="">All</option>
+        <% (stages||[]).forEach(s => { %><option value="<%= s.stage_id %>" <%= query.stage_id==s.stage_id?'selected':'' %>><%= s.stage_name %></option><% }) %>
+      </select>
+    </div>
+    <div class="col-6 col-md-3 col-lg-2">
+      <label class="form-label small fw-semibold mb-1">Priority</label>
+      <select name="priority_id" class="form-select form-select-sm">
+        <option value="">All</option>
+        <% (priorities||[]).forEach(p => { %><option value="<%= p.priority_id %>" <%= query.priority_id==p.priority_id?'selected':'' %>><%= p.priority_name %></option><% }) %>
+      </select>
+    </div>
+    <div class="col-6 col-md-3 col-lg-2">
+      <label class="form-label small fw-semibold mb-1">Employee</label>
+      <select name="employee_id" class="form-select form-select-sm">
+        <option value="">All</option>
+        <% (employees||[]).forEach(e => { %><option value="<%= e.employee_id %>" <%= query.employee_id==e.employee_id?'selected':'' %>><%= e.first_name %> <%= e.last_name %></option><% }) %>
+      </select>
+    </div>
+    <div class="col-auto">
+      <button type="submit" class="btn btn-primary btn-sm">Apply</button>
+      <a href="<%= basePath %>/reports" class="btn btn-outline-secondary btn-sm ms-1">Clear</a>
+    </div>
+  </form>
+</div>
+
+<!-- Summary KPIs -->
+<div class="row g-3 mb-4">
+  <% const kpis = [
+    { label:'Total Tasks',      value: totalTasks,     color:'#4f46e5' },
+    { label:'Completed',        value: completedTasks, color:'#10b981' },
+    { label:'Overdue',          value: overdueTasks,   color:'#ef4444' },
+    { label:'Completion Rate',  value: completionRate+'%', color:'#3b82f6' },
+  ]; %>
+  <% kpis.forEach(k => { %>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm p-3 text-center">
+      <div style="font-size:1.8rem;font-weight:700;color:<%= k.color %>;"><%= k.value %></div>
+      <div class="text-muted small"><%= k.label %></div>
+    </div>
+  </div>
+  <% }) %>
+</div>
+
+<!-- Charts row -->
+<div class="row g-4 mb-4">
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm p-4">
+      <div class="fw-semibold small mb-3">Tasks by Stage</div>
+      <canvas id="stageChart" height="200"
+              data-chart-type="doughnut"
+              data-chart-labels="<%- JSON.stringify(stageCounts.map(s=>s.stage)) %>"
+              data-chart-values="<%- JSON.stringify(stageCounts.map(s=>s.count)) %>"
+              data-chart-colors='["#9ca3af","#3b82f6","#f59e0b","#10b981","#ef4444"]'></canvas>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm p-4">
+      <div class="fw-semibold small mb-3">Tasks by Priority</div>
+      <canvas id="priorityChart" height="200"
+              data-chart-type="doughnut"
+              data-chart-labels="<%- JSON.stringify(priorityCounts.map(p=>p.priority)) %>"
+              data-chart-values="<%- JSON.stringify(priorityCounts.map(p=>p.count)) %>"
+              data-chart-colors='["#9ca3af","#f59e0b","#ef4444"]'></canvas>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm p-4">
+      <div class="fw-semibold small mb-3">Attendance Summary</div>
+      <canvas id="attChart" height="200"
+              data-chart-type="doughnut"
+              data-chart-labels="<%- JSON.stringify((attSummary||[]).map(a=>a.attendance_status)) %>"
+              data-chart-values="<%- JSON.stringify((attSummary||[]).map(a=>+a.cnt)) %>"
+              data-chart-colors='["#10b981","#f59e0b","#9ca3af","#ef4444"]'></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- Employee performance table -->
+<div class="card border-0 shadow-sm mb-4">
+  <div class="px-3 pt-3 pb-2 border-bottom fw-semibold small">Employee Performance
+    <span class="text-muted fw-normal">(<%= perfTotal %> employees)</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr><th>Employee</th><th>Department</th><th class="text-center">Assigned</th><th class="text-center">Completed</th><th class="text-center">Overdue</th><th class="text-center">Rate</th></tr>
+      </thead>
+      <tbody>
+        <% if (!performance || !performance.length) { %>
+          <tr><td colspan="6" class="text-center py-4 text-muted">No data for selected filters.</td></tr>
+        <% } %>
+        <% (performance||[]).forEach(r => { %>
+          <tr>
+            <td class="fw-semibold"><%= r.employee.first_name %> <%= r.employee.last_name %></td>
+            <td class="text-muted"><%= r.employee.department?.department_name || '—' %></td>
+            <td class="text-center"><%= r.assigned %></td>
+            <td class="text-center"><%= r.completed %></td>
+            <td class="text-center <%= r.overdue > 0 ? 'text-danger fw-semibold' : '' %>"><%= r.overdue %></td>
+            <td class="text-center">
+              <span class="badge <%= r.completion_rate >= 80 ? 'bg-success' : r.completion_rate >= 50 ? 'bg-warning text-dark' : 'bg-danger' %>">
+                <%= r.completion_rate %>%
+              </span>
+            </td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+  <!-- Pagination -->
+  <% if (perfPages > 1) { %>
+  <div class="d-flex justify-content-between align-items-center px-3 py-2 border-top small">
+    <span class="text-muted">Page <%= perfPage %> of <%= perfPages %></span>
+    <div class="d-flex gap-1">
+      <% if (perfPage > 1) { %><a href="?<%= new URLSearchParams({...query, page: perfPage-1}).toString() %>" class="btn btn-sm btn-outline-secondary py-0 px-2">‹ Prev</a><% } %>
+      <% if (perfPage < perfPages) { %><a href="?<%= new URLSearchParams({...query, page: perfPage+1}).toString() %>" class="btn btn-sm btn-outline-secondary py-0 px-2">Next ›</a><% } %>
+    </div>
+  </div>
+  <% } %>
+</div>
+
+<%- include('../partials/layout_end') %>

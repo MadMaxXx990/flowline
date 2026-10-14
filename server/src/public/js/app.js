@@ -148,6 +148,22 @@ document.addEventListener('DOMContentLoaded', () => {
     empDeptSel.addEventListener('change', filterTeamOptions);
     // Run on load so edit page starts in the right state
     filterTeamOptions();
+  // ── Attendance edit modal ─────────────────────────────────────────────────────
+  const editAttModal = document.getElementById('editAttModal');
+  if (editAttModal) {
+    editAttModal.addEventListener('show.bs.modal', event => {
+      const btn     = event.relatedTarget;
+      const id      = btn.getAttribute('data-id');
+      const timeIn  = btn.getAttribute('data-time-in')  || '';
+      const timeOut = btn.getAttribute('data-time-out') || '';
+      const status  = btn.getAttribute('data-status')   || '';
+      // Build action URL from current pathname prefix (handles /admin and /manager)
+      const prefix  = window.location.pathname.replace(/\/attendance.*$/, '');
+      document.getElementById('editAttForm').action  = `${prefix}/attendance/${id}?_method=PUT`;
+      document.getElementById('editTimeIn').value    = timeIn;
+      document.getElementById('editTimeOut').value   = timeOut;
+      document.getElementById('editAttStatus').value = status;
+    });
   }
 
 });

@@ -3,24 +3,36 @@ const router   = require('express').Router();
 const { authenticate, authorize } = require('../middleware/auth');
 const upload   = require('../middleware/upload');
 
-const deptC = require('../controllers/departmentController');
-const posC  = require('../controllers/positionController');
-const teamC = require('../controllers/teamController');
-const empC  = require('../controllers/employeeController');
-const taskC = require('../controllers/taskController');
-const attC  = require('../controllers/attachmentController');
+const deptC  = require('../controllers/departmentController');
+const posC   = require('../controllers/positionController');
+const teamC  = require('../controllers/teamController');
+const empC   = require('../controllers/employeeController');
+const taskC  = require('../controllers/taskController');
+const attC   = require('../controllers/attachmentController');
 const notifC = require('../controllers/notificationController');
+const dashC  = require('../controllers/dashboardController');
+const repC   = require('../controllers/reportsController');
+const attnC  = require('../controllers/attendanceController');
+const logC   = require('../controllers/activityLogController');
 
 // All admin routes require authentication and the Administrator role.
 router.use(authenticate, authorize('Administrator'));
 
-// ── Dashboard stub ────────────────────────────────────────────────────────────
-router.get('/dashboard', (req, res) => {
-  res.render('dashboard/index', {
-    role: 'Administrator', basePath: '/admin', user: req.user,
-    currentPath: '/admin/dashboard',
-  });
-});
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+router.get('/dashboard', dashC.admin);
+
+// ── Activity Logs (read-only, Admin only) ─────────────────────────────────────
+router.get('/activity-logs', logC.index);
+
+// ── Attendance ────────────────────────────────────────────────────────────────
+router.get('/attendance',          attnC.index);
+router.post('/attendance',         attnC.store);
+router.post('/attendance/:id',     attnC.update);   // ?_method=PUT
+router.delete('/attendance/:id',   attnC.destroy);  // ?_method=DELETE  (Admin only)
+
+// ── Reports ───────────────────────────────────────────────────────────────────
+router.get('/reports',              repC.index);
+router.get('/reports/export/excel', repC.exportExcel);
 
 // ── Notifications ─────────────────────────────────────────────────────────────
 router.get('/notifications',             notifC.index);

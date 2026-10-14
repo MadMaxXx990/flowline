@@ -1,0 +1,65 @@
+<%- include('../partials/layout_start') %>
+
+<div class="page-heading mb-4">My Dashboard</div>
+
+<!-- KPI row -->
+<div class="row g-3 mb-4">
+  <% const kpis = [
+    { label:'My Tasks',    value: totalTasks,     icon:'bi-list-task',             color:'#4f46e5' },
+    { label:'Completed',   value: completedCount, icon:'bi-check-circle-fill',     color:'#10b981' },
+    { label:'Overdue',     value: overdueCount,   icon:'bi-alarm-fill',            color:'#ef4444' },
+    { label:'Due in 7 days', value: dueSoonCount, icon:'bi-calendar-event-fill',   color:'#f59e0b' },
+  ]; %>
+  <% kpis.forEach(k => { %>
+  <div class="col-6 col-md-3">
+    <div class="card border-0 shadow-sm p-3 d-flex flex-row align-items-center gap-3">
+      <div class="rounded-3 d-flex align-items-center justify-content-center flex-shrink-0"
+           style="width:44px;height:44px;background:<%= k.color %>20;">
+        <i class="bi <%= k.icon %>" style="color:<%= k.color %>;font-size:1.2rem;"></i>
+      </div>
+      <div>
+        <div style="font-size:1.5rem;font-weight:700;line-height:1.1;"><%= k.value %></div>
+        <div class="text-muted small"><%= k.label %></div>
+      </div>
+    </div>
+  </div>
+  <% }) %>
+</div>
+
+<div class="row g-4">
+  <!-- Stage breakdown -->
+  <div class="col-lg-5">
+    <div class="card border-0 shadow-sm p-4">
+      <div class="fw-semibold small mb-3">My Tasks by Stage</div>
+      <canvas id="stageChart" height="220"
+              data-chart-type="doughnut"
+              data-chart-labels="<%- JSON.stringify(stageCounts.map(s=>s.stage)) %>"
+              data-chart-values="<%- JSON.stringify(stageCounts.map(s=>s.count)) %>"
+              data-chart-colors='["#9ca3af","#3b82f6","#f59e0b","#10b981","#ef4444"]'></canvas>
+    </div>
+  </div>
+  <!-- Recent notifications -->
+  <div class="col-lg-7">
+    <div class="card border-0 shadow-sm">
+      <div class="px-3 pt-3 pb-2 border-bottom fw-semibold small d-flex justify-content-between">
+        <span>Recent Notifications</span>
+        <a href="/employee/notifications" class="text-muted small">View all</a>
+      </div>
+      <% if (!recentNotifications || !recentNotifications.length) { %>
+        <div class="p-4 text-center text-muted small">No notifications yet.</div>
+      <% } else { %>
+        <ul class="list-group list-group-flush">
+          <% recentNotifications.forEach(n => { %>
+            <li class="list-group-item px-3 py-2 small <%= !n.is_read ? 'bg-primary-subtle' : '' %>">
+              <div class="fw-semibold"><%= n.title %></div>
+              <div class="text-muted text-truncate"><%= n.message %></div>
+              <div class="text-muted" style="font-size:.7rem;"><%= new Date(n.created_at).toLocaleString() %></div>
+            </li>
+          <% }) %>
+        </ul>
+      <% } %>
+    </div>
+  </div>
+</div>
+
+<%- include('../partials/layout_end') %>

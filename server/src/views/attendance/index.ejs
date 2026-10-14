@@ -1,0 +1,214 @@
+<%- include('../partials/layout_start') %>
+
+<div class="page-heading mb-4">Attendance</div>
+
+<!-- ── Employee: Time-in / Time-out buttons ── -->
+<% if (role === 'Employee') { %>
+<div class="d-flex gap-3 mb-4">
+  <% if (!todayRecord || !todayRecord.time_in) { %>
+    <form method="POST" action="/employee/attendance/time-in">
+      <button type="submit" class="btn btn-success">
+        <i class="bi bi-box-arrow-in-right me-1"></i>Time In
+      </button>
+    </form>
+  <% } else { %>
+    <div class="card border-0 shadow-sm px-4 py-2 small">
+      <span class="text-muted">Time In</span>
+      <span class="fw-semibold"><%= todayRecord.time_in %></span>
+    </div>
+  <% } %>
+  <% if (todayRecord && todayRecord.time_in && !todayRecord.time_out) { %>
+    <form method="POST" action="/employee/attendance/time-out">
+      <button type="submit" class="btn btn-warning">
+        <i class="bi bi-box-arrow-right me-1"></i>Time Out
+      </button>
+    </form>
+  <% } else if (todayRecord && todayRecord.time_out) { %>
+    <div class="card border-0 shadow-sm px-4 py-2 small">
+      <span class="text-muted">Time Out</span>
+      <span class="fw-semibold"><%= todayRecord.time_out %></span>
+    </div>
+  <% } %>
+</div>
+<% } %>
+
+<!-- ── Admin/Manager: filter + create form ── -->
+<% if (role !== 'Employee') { %>
+<div class="row g-4 mb-4">
+  <!-- Filter -->
+  <div class="col-lg-8">
+    <div class="card border-0 shadow-sm p-3">
+      <form method="GET" action="<%= basePath %>/attendance" class="row g-2 align-items-end">
+        <div class="col-6 col-md-4">
+          <label class="form-label small fw-semibold mb-1">Employee</label>
+          <select name="employee_id" class="form-select form-select-sm">
+            <option value="">All</option>
+            <% (employees||[]).forEach(e => { %>
+              <option value="<%= e.employee_id %>" <%= query.employee_id==e.employee_id?'selected':'' %>>
+                <%= e.first_name %> <%= e.last_name %>
+              </option>
+            <% }) %>
+          </select>
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label small fw-semibold mb-1">From</label>
+          <input type="date" name="from" class="form-control form-control-sm" value="<%= query.from %>" />
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label small fw-semibold mb-1">To</label>
+          <input type="date" name="to" class="form-control form-control-sm" value="<%= query.to %>" />
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label small fw-semibold mb-1">Status</label>
+          <select name="attendance_status" class="form-select form-select-sm">
+            <option value="">All</option>
+            <% ['Present','Absent','On Leave'].forEach(s => { %>
+              <option value="<%= s %>" <%= query.attendance_status===s?'selected':'' %>><%= s %></option>
+            <% }) %>
+          </select>
+        </div>
+        <div class="col-auto">
+          <button type="submit" class="btn btn-primary btn-sm">Filter</button>
+          <a href="<%= basePath %>/attendance" class="btn btn-outline-secondary btn-sm ms-1">Clear</a>
+        </div>
+      </form>
+    </div>
+  </div>
+  <!-- Create form -->
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm p-3">
+      <h6 class="fw-semibold mb-3 small">Log Attendance</h6>
+      <form method="POST" action="<%= basePath %>/attendance">
+        <div class="mb-2">
+          <select name="employee_id" class="form-select form-select-sm" required>
+            <option value="">Select employee…</option>
+            <% (employees||[]).forEach(e => { %><option value="<%= e.employee_id %>"><%= e.first_name %> <%= e.last_name %></option><% }) %>
+          </select>
+        </div>
+        <div class="mb-2">
+          <input type="date" name="date" class="form-control form-control-sm" required />
+        </div>
+        <div class="row g-2 mb-2">
+          <div class="col-6"><input type="time" name="time_in"  class="form-control form-control-sm" placeholder="Time in"  /></div>
+          <div class="col-6"><input type="time" name="time_out" class="form-control form-control-sm" placeholder="Time out" /></div>
+        </div>
+        <div class="mb-3">
+          <select name="attendance_status" class="form-select form-select-sm" required>
+            <option value="">Status…</option>
+            <% ['Present','Absent','On Leave'].forEach(s => { %><option value="<%= s %>"><%= s %></option><% }) %>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm w-100">Save</button>
+      </form>
+    </div>
+  </div>
+</div>
+<% } %>
+
+<!-- Records table -->
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <% if (role !== 'Employee') { %><th>Employee</th><th>Department</th><% } %>
+          <th>Date</th><th>Time In</th><th>Time Out</th><th>Status</th>
+          <% if (role !== 'Employee') { %><th></th><% } %>
+        </tr>
+      </thead>
+      <tbody>
+        <% if (!records || !records.length) { %>
+          <tr><td colspan="<%= role !== 'Employee' ? 7 : 4 %>" class="text-center py-5 text-muted">No records found.</td></tr>
+        <% } %>
+        <% (records||[]).forEach(rec => { %>
+          <%
+            const smap = { Present:'success', Absent:'danger', 'On Leave':'warning' };
+            const sc   = smap[rec.attendance_status] || 'secondary';
+          %>
+          <tr>
+            <% if (role !== 'Employee') { %>
+              <td class="fw-semibold"><%= rec.employee ? rec.employee.first_name+' '+rec.employee.last_name : '—' %></td>
+              <td class="text-muted"><%= rec.employee?.department?.department_name || '—' %></td>
+            <% } %>
+            <td><%= rec.date ? new Date(rec.date+'T00:00:00').toLocaleDateString() : '—' %></td>
+            <td><%= rec.time_in  || '—' %></td>
+            <td><%= rec.time_out || '—' %></td>
+            <td><span class="badge bg-<%= sc %>-subtle text-<%= sc %> border"><%= rec.attendance_status %></span></td>
+            <% if (role !== 'Employee') { %>
+            <td class="text-end">
+              <!-- Inline edit via Bootstrap modal -->
+              <button class="btn btn-sm btn-outline-secondary py-0 px-2 me-1"
+                      data-bs-toggle="modal" data-bs-target="#editAttModal"
+                      data-id="<%= rec.attendance_id %>"
+                      data-time-in="<%= rec.time_in||'' %>"
+                      data-time-out="<%= rec.time_out||'' %>"
+                      data-status="<%= rec.attendance_status %>">
+                <i class="bi bi-pencil"></i>
+              </button>
+              <% if (role === 'Administrator') { %>
+              <form method="POST" action="/admin/attendance/<%= rec.attendance_id %>?_method=DELETE"
+                    class="d-inline" data-confirm="Delete this attendance record?">
+                <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </form>
+              <% } %>
+            </td>
+            <% } %>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+  <!-- Pagination -->
+  <% if (pages > 1) { %>
+  <div class="d-flex justify-content-between align-items-center px-3 py-2 border-top small">
+    <span class="text-muted">Page <%= page %> of <%= pages %> (<%= total %> records)</span>
+    <div class="d-flex gap-1">
+      <% if (page > 1) { %><a href="?<%= new URLSearchParams({...query, page: page-1}).toString() %>" class="btn btn-sm btn-outline-secondary py-0 px-2">‹ Prev</a><% } %>
+      <% if (page < pages) { %><a href="?<%= new URLSearchParams({...query, page: page+1}).toString() %>" class="btn btn-sm btn-outline-secondary py-0 px-2">Next ›</a><% } %>
+    </div>
+  </div>
+  <% } %>
+</div>
+
+<!-- Edit modal (Admin/Manager) -->
+<% if (role !== 'Employee') { %>
+<div class="modal fade" id="editAttModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" style="max-width:340px;">
+    <div class="modal-content">
+      <form method="POST" id="editAttForm" action="">
+        <input type="hidden" name="_method" value="PUT" />
+        <div class="modal-header">
+          <h5 class="modal-title small fw-semibold">Edit Attendance</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label small fw-semibold mb-1">Time In</label>
+              <input type="time" name="time_in" id="editTimeIn" class="form-control form-control-sm" />
+            </div>
+            <div class="col-6">
+              <label class="form-label small fw-semibold mb-1">Time Out</label>
+              <input type="time" name="time_out" id="editTimeOut" class="form-control form-control-sm" />
+            </div>
+          </div>
+          <div>
+            <label class="form-label small fw-semibold mb-1">Status</label>
+            <select name="attendance_status" id="editAttStatus" class="form-select form-select-sm" required>
+              <% ['Present','Absent','On Leave'].forEach(s => { %><option value="<%= s %>"><%= s %></option><% }) %>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-light btn-sm" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary btn-sm">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+<% } %>
+
+<%- include('../partials/layout_end') %>

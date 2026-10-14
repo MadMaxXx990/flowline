@@ -4,17 +4,19 @@ const { authenticate, authorize } = require('../middleware/auth');
 const taskC  = require('../controllers/taskController');
 const attC   = require('../controllers/attachmentController');
 const notifC = require('../controllers/notificationController');
+const dashC  = require('../controllers/dashboardController');
+const attnC  = require('../controllers/attendanceController');
 
 // All employee routes require authentication and the Employee role.
 router.use(authenticate, authorize('Employee'));
 
-// ── Dashboard stub ────────────────────────────────────────────────────────────
-router.get('/dashboard', (req, res) => {
-  res.render('dashboard/index', {
-    role: 'Employee', basePath: '/employee', user: req.user,
-    currentPath: '/employee/dashboard',
-  });
-});
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+router.get('/dashboard', dashC.employee);
+
+// ── Attendance ────────────────────────────────────────────────────────────────
+router.get('/attendance',           attnC.index);
+router.post('/attendance/time-in',  attnC.timeIn);   // must be before /:id
+router.post('/attendance/time-out', attnC.timeOut);
 
 // ── Notifications ─────────────────────────────────────────────────────────────
 router.get('/notifications',             notifC.index);

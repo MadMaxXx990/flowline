@@ -1,0 +1,123 @@
+<%- include('../partials/layout_start') %>
+
+<div class="page-heading mb-4">Audit Log</div>
+
+<!-- Filter form -->
+<div class="card border-0 shadow-sm p-3 mb-4">
+  <form method="GET" action="/admin/activity-logs" class="row g-2 align-items-end">
+    <div class="col-6 col-md-3 col-lg-2">
+      <label class="form-label small fw-semibold mb-1">User</label>
+      <select name="user_id" class="form-select form-select-sm">
+        <option value="">All Users</option>
+        <% (users||[]).forEach(u => { %>
+          <%
+            const uname = u.employee
+              ? u.employee.first_name + ' ' + u.employee.last_name
+              : u.username;
+          %>
+          <option value="<%= u.id %>" <%= query.user_id == u.id ? 'selected' : '' %>>
+            <%= uname %> (<%= u.username %>)
+          </option>
+        <% }) %>
+      </select>
+    </div>
+    <div class="col-6 col-md-3 col-lg-2">
+      <label class="form-label small fw-semibold mb-1">Action</label>
+      <select name="action_type" class="form-select form-select-sm">
+        <option value="">All Actions</option>
+        <% (actionTypes||[]).forEach(a => { %>
+          <option value="<%= a %>" <%= query.action_type === a ? 'selected' : '' %>><%= a %></option>
+        <% }) %>
+      </select>
+    </div>
+    <div class="col-6 col-md-3 col-lg-2">
+      <label class="form-label small fw-semibold mb-1">From</label>
+      <input type="date" name="from" class="form-control form-control-sm" value="<%= query.from %>" />
+    </div>
+    <div class="col-6 col-md-3 col-lg-2">
+      <label class="form-label small fw-semibold mb-1">To</label>
+      <input type="date" name="to" class="form-control form-control-sm" value="<%= query.to %>" />
+    </div>
+    <div class="col-12 col-md-4 col-lg-3">
+      <label class="form-label small fw-semibold mb-1">Search description</label>
+      <input type="text" name="search" class="form-control form-control-sm"
+             placeholder="Search…" value="<%= query.search %>" />
+    </div>
+    <div class="col-auto">
+      <button type="submit" class="btn btn-primary btn-sm">Filter</button>
+      <a href="/admin/activity-logs" class="btn btn-outline-secondary btn-sm ms-1">Clear</a>
+    </div>
+  </form>
+</div>
+
+<!-- Log table -->
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light">
+        <tr>
+          <th>Time</th>
+          <th>User</th>
+          <th>Action</th>
+          <th>Table</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% if (!logs || !logs.length) { %>
+          <tr><td colspan="5" class="text-center py-5 text-muted">No log entries found.</td></tr>
+        <% } %>
+        <% (logs||[]).forEach(entry => { %>
+          <%
+            const uname = entry.user && entry.user.employee
+              ? entry.user.employee.first_name + ' ' + entry.user.employee.last_name
+              : (entry.user ? entry.user.username : '—');
+            const actionColors = {
+              login:    'primary',  logout:   'secondary',
+              create:   'success',  update:   'warning',
+              delete:   'danger',   archive:  'warning',
+              approval: 'info',     download: 'secondary',
+              assignment: 'primary',
+            };
+            const ac = actionColors[entry.action_type] || 'secondary';
+          %>
+          <tr>
+            <td class="text-muted text-nowrap" style="font-size:.72rem;">
+              <%= new Date(entry.created_at).toLocaleString() %>
+            </td>
+            <td class="fw-semibold"><%= uname %></td>
+            <td>
+              <span class="badge bg-<%= ac %>-subtle text-<%= ac %> border" style="font-size:.68rem;">
+                <%= entry.action_type %>
+              </span>
+            </td>
+            <td class="text-muted"><%= entry.table_affected || '—' %></td>
+            <td class="text-muted" style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+                title="<%= entry.description || '' %>">
+              <%= entry.description || '—' %>
+            </td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Pagination -->
+  <% if (pages > 1) { %>
+  <div class="d-flex justify-content-between align-items-center px-3 py-2 border-top small">
+    <span class="text-muted">Page <%= page %> of <%= pages %> (<%= total %> entries)</span>
+    <div class="d-flex gap-1">
+      <% if (page > 1) { %>
+        <a href="?<%= new URLSearchParams({...query, page: page-1}).toString() %>"
+           class="btn btn-sm btn-outline-secondary py-0 px-2">‹ Prev</a>
+      <% } %>
+      <% if (page < pages) { %>
+        <a href="?<%= new URLSearchParams({...query, page: page+1}).toString() %>"
+           class="btn btn-sm btn-outline-secondary py-0 px-2">Next ›</a>
+      <% } %>
+    </div>
+  </div>
+  <% } %>
+</div>
+
+<%- include('../partials/layout_end') %>

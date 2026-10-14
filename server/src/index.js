@@ -71,17 +71,12 @@ app.use('/admin',     require('./routes/admin'));
 app.use('/manager',   require('./routes/manager'));
 app.use('/employee',  require('./routes/employee'));
 
-// ── API routes (JSON — kept for Phase 8 removal) ──────────────────────────────
-// /api/employees, /api/departments, /api/teams, /api/positions removed —
-// organisation management is now server-rendered (EJS). Old React client may
-// no longer function; react-prisma-final tag is the fallback.
-// /api/tasks removed — task pages are now server-rendered via /admin/tasks, /manager/tasks, /employee/tasks
-app.use('/api/attendance',    require('./routes/attendance'));
-app.use('/api/files',         require('./routes/files'));
-app.use('/api/notifications', require('./routes/notifications'));
-app.use('/api/reports',       require('./routes/reports'));
-app.use('/api/activity-logs', require('./routes/activityLogs'));
-app.use('/api/dashboard',     require('./routes/dashboard'));
+// ── API routes (JSON — legacy Prisma routes removed; old React client may not function) ──
+// react-prisma-final tag is the fallback for the old React client.
+// /api/tasks  — removed (Phase 4a)
+// /api/employees, /api/departments, /api/teams, /api/positions — removed (Phase 5)
+// /api/attendance, /api/files, /api/notifications, /api/reports,
+// /api/activity-logs, /api/dashboard — removed (Phase 6)
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get('/api/health', (_, res) => res.json({ status: 'ok', timestamp: new Date() }));
