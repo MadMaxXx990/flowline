@@ -81,6 +81,7 @@ CREATE TABLE `attendance` (
   `updated_at` datetime(3) NOT NULL,
   PRIMARY KEY (`attendance_id`),
   KEY `attendance_employee_id_fkey` (`employee_id`),
+  UNIQUE KEY `attendance_employee_date_unique` (`employee_id`,`date`),
   CONSTRAINT `attendance_employee_id_fkey` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`employee_id`) ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;

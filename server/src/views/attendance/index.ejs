@@ -62,7 +62,7 @@
           <label class="form-label small fw-semibold mb-1">Status</label>
           <select name="attendance_status" class="form-select form-select-sm">
             <option value="">All</option>
-            <% ['Present','Absent','On Leave'].forEach(s => { %>
+            <% (ATTENDANCE_STATUSES||['Present','Absent','On Leave']).forEach(s => { %>
               <option value="<%= s %>" <%= query.attendance_status===s?'selected':'' %>><%= s %></option>
             <% }) %>
           </select>
@@ -95,7 +95,7 @@
         <div class="mb-3">
           <select name="attendance_status" class="form-select form-select-sm" required>
             <option value="">Status…</option>
-            <% ['Present','Absent','On Leave'].forEach(s => { %><option value="<%= s %>"><%= s %></option><% }) %>
+            <% (ATTENDANCE_STATUSES||['Present','Absent','On Leave']).forEach(s => { %><option value="<%= s %>"><%= s %></option><% }) %>
           </select>
         </div>
         <button type="submit" class="btn btn-primary btn-sm w-100">Save</button>
@@ -197,7 +197,7 @@
           <div>
             <label class="form-label small fw-semibold mb-1">Status</label>
             <select name="attendance_status" id="editAttStatus" class="form-select form-select-sm" required>
-              <% ['Present','Absent','On Leave'].forEach(s => { %><option value="<%= s %>"><%= s %></option><% }) %>
+              <% (ATTENDANCE_STATUSES||['Present','Absent','On Leave']).forEach(s => { %><option value="<%= s %>"><%= s %></option><% }) %>
             </select>
           </div>
         </div>
