@@ -19,6 +19,7 @@ const Attachment       = require('./Attachment');
 const Notification     = require('./Notification');
 const Attendance       = require('./Attendance');
 const ActivityLog      = require('./ActivityLog');
+const TaskReminder     = require('./TaskReminder');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Role ↔ User
@@ -174,6 +175,12 @@ User.hasMany(ActivityLog,        { as: 'activityLogs', foreignKey: 'user_id' });
 ActivityLog.belongsTo(User,      { as: 'user',         foreignKey: 'user_id' });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// TaskReminder ↔ Task
+// ─────────────────────────────────────────────────────────────────────────────
+Task.hasMany(TaskReminder,       { as: 'reminders', foreignKey: 'task_id' });
+TaskReminder.belongsTo(Task,     { as: 'task',      foreignKey: 'task_id' });
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Exports — single object so controllers can destructure what they need
 // ─────────────────────────────────────────────────────────────────────────────
 module.exports = {
@@ -196,4 +203,5 @@ module.exports = {
   Notification,
   Attendance,
   ActivityLog,
+  TaskReminder,
 };

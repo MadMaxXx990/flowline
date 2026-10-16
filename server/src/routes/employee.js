@@ -9,6 +9,7 @@ const attnC  = require('../controllers/attendanceController');
 
 // All employee routes require authentication and the Employee role.
 router.use(authenticate, authorize('Employee'));
+router.use(require('../middleware/unreadCount'));
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 router.get('/dashboard', dashC.employee);

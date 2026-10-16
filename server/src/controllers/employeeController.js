@@ -130,8 +130,8 @@ const store = async (req, res) => {
     return renderError('Please enter a valid email address.');
   }
   // Password minimum length
-  if (password.length < 6) {
-    return renderError('Password must be at least 6 characters.');
+  if (password.length < 8) {
+    return renderError('Password must be at least 8 characters.');
   }
 
   // Unique email
@@ -290,8 +290,10 @@ const update = async (req, res) => {
     }
 
     const userUpdate = { role_id: newRoleId, username };
-    if (password && password.length >= 6) {
+    if (password && password.length >= 8) {
       userUpdate.password = await bcrypt.hash(password, 10);
+    } else if (password && password.length > 0) {
+      return renderError('Password must be at least 8 characters.');
     }
     await existingUser.update(userUpdate);
   }

@@ -1,4 +1,4 @@
-﻿
+
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
 /*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
@@ -354,6 +354,22 @@ CREATE TABLE `workflow_stages` (
   PRIMARY KEY (`stage_id`),
   UNIQUE KEY `workflow_stages_stage_name_key` (`stage_name`),
   UNIQUE KEY `workflow_stages_step_order_key` (`step_order`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `task_reminders`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `task_reminders` (
+  `reminder_id`   int(11)       NOT NULL AUTO_INCREMENT,
+  `task_id`       int(11)       NOT NULL,
+  `reminder_type` varchar(50)   NOT NULL COMMENT 'e.g. due_3d, due_1d, due_today',
+  `sent_at`       datetime(3)   NOT NULL DEFAULT current_timestamp(3),
+  `created_at`    datetime(3)   NOT NULL DEFAULT current_timestamp(3),
+  `updated_at`    datetime(3)   NOT NULL,
+  PRIMARY KEY (`reminder_id`),
+  UNIQUE KEY `task_reminders_task_reminder_unique` (`task_id`,`reminder_type`),
+  KEY `task_reminders_task_id_fkey` (`task_id`),
+  CONSTRAINT `task_reminders_task_id_fkey` FOREIGN KEY (`task_id`) REFERENCES `tasks` (`task_id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;

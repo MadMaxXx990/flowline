@@ -11,6 +11,7 @@ const attnC   = require('../controllers/attendanceController');
 
 // All manager routes require authentication and the Manager role.
 router.use(authenticate, authorize('Manager'));
+router.use(require('../middleware/unreadCount'));
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 router.get('/dashboard', dashC.manager);

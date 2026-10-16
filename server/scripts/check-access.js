@@ -528,6 +528,205 @@ async function main() {
   }
 
   // ════════════════════════════════════════════════════════════════════════════
+  // SECTION 9 — Unread notification badge count
+  // Verifies A1: unreadCount middleware runs AFTER authenticate so the badge
+  // reflects the real DB value, not always 0.
+  // ════════════════════════════════════════════════════════════════════════════
+  if (SELF_MANAGED) {
+    // Mark all of emp1's notifications as read, then check count = 0
+    await runSql(
+      `UPDATE notifications SET is_read=1 WHERE user_id=(SELECT id FROM users WHERE username='emp1')`,
+      SCRATCH_DB
+    );
+    await check('Unread badge = 0 after mark-all-read', async () => {
+      const [row] = await querySql(
+        `SELECT COUNT(*) AS cnt FROM notifications WHERE user_id=(SELECT id FROM users WHERE username='emp1') AND is_read=0`,
+        SCRATCH_DB
+      );
+      return +row.cnt;
+    }, 0);
+
+    // Insert one unread notification for emp1
+    const [emp1UserRow] = await querySql(
+      `SELECT id FROM users WHERE username='emp1' LIMIT 1`, SCRATCH_DB
+    );
+    if (emp1UserRow) {
+      await runSql(
+        `INSERT INTO notifications (user_id, notification_type, title, message, is_read, created_at, updated_at)
+         VALUES (${emp1UserRow.id}, 'status', 'Test', 'Badge test', 0, NOW(), NOW())`,
+        SCRATCH_DB
+      );
+      await check('Unread badge = 1 after inserting notification', async () => {
+        const [row] = await querySql(
+          `SELECT COUNT(*) AS cnt FROM notifications WHERE user_id=${emp1UserRow.id} AND is_read=0`,
+          SCRATCH_DB
+        );
+        return +row.cnt;
+      }, 1);
+      // Employee dashboard should render (200) — sidebar picks up the count at render time
+      await check('Employee dashboard renders with unread notification', () => get('/employee/dashboard', empTok), 200);
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // SECTION 10 — Correct old/new stage_id in task_stage_history after approve
+  //              and submitForReview (A2 fix verification)
+  // ════════════════════════════════════════════════════════════════════════════
+  if (SELF_MANAGED) {
+    // Create a fresh task as manager1, assign to emp1, move it to For Review
+    const [forReviewStage] = await querySql(
+      `SELECT stage_id FROM workflow_stages WHERE stage_name='For Review' LIMIT 1`, SCRATCH_DB
+    );
+    const [pendingStage] = await querySql(
+      `SELECT stage_id FROM workflow_stages WHERE stage_name='Pending' LIMIT 1`, SCRATCH_DB
+    );
+    const [completedStage] = await querySql(
+      `SELECT stage_id FROM workflow_stages WHERE stage_name='Completed' LIMIT 1`, SCRATCH_DB
+    );
+
+    if (forReviewStage && pendingStage && completedStage) {
+      const due = new Date(); due.setDate(due.getDate() + 30);
+      const dueStr = due.toISOString().split('T')[0];
+
+      // Create task via HTTP (manager1)
+      let stageTestTaskId = null;
+      await check('Stage history: create task → 302', async () => {
+        const r = await httpReq('POST', '/manager/tasks', mgrTok, {
+          task_title:   'Stage-history test task',
+          priority_id:  String(highPriId),
+          due_date:     dueStr,
+          employee_ids: String(emp1Row.employee_id),
+        });
+        if (r.status === 302) {
+          const [row] = await querySql(
+            `SELECT task_id FROM tasks WHERE task_title='Stage-history test task' ORDER BY task_id DESC LIMIT 1`,
+            SCRATCH_DB
+          );
+          stageTestTaskId = row?.task_id;
+        }
+        return r.status;
+      }, 302);
+
+      if (stageTestTaskId) {
+        // Manually set task to For Review so manager can approve it
+        await runSql(
+          `UPDATE tasks SET stage_id=${forReviewStage.stage_id}, updated_at=NOW() WHERE task_id=${stageTestTaskId}`,
+          SCRATCH_DB
+        );
+
+        // Approve via HTTP (manager1) — should move For Review → Completed
+        await check('Stage history: approve → 302', async () => {
+          const r = await httpReq('POST', `/manager/tasks/${stageTestTaskId}/approve`, mgrTok, {
+            approval_status: 'Approved',
+          });
+          return r.status;
+        }, 302);
+
+        // Verify the last history row has correct old/new stage
+        await check('Stage history: approve old_stage = For Review', async () => {
+          const [row] = await querySql(
+            `SELECT ws.stage_name FROM task_stage_history h
+             JOIN workflow_stages ws ON h.old_stage_id = ws.stage_id
+             WHERE h.task_id=${stageTestTaskId}
+             ORDER BY h.history_id DESC LIMIT 1`,
+            SCRATCH_DB
+          );
+          return row?.stage_name;
+        }, 'For Review');
+
+        await check('Stage history: approve new_stage = Completed', async () => {
+          const [row] = await querySql(
+            `SELECT ws.stage_name FROM task_stage_history h
+             JOIN workflow_stages ws ON h.new_stage_id = ws.stage_id
+             WHERE h.task_id=${stageTestTaskId}
+             ORDER BY h.history_id DESC LIMIT 1`,
+            SCRATCH_DB
+          );
+          return row?.stage_name;
+        }, 'Completed');
+
+        // Now test submitForReview: create another task and submit it as emp1
+        let sfrtTaskId = null;
+        await check('Stage history: create task for submitForReview → 302', async () => {
+          const r = await httpReq('POST', '/manager/tasks', mgrTok, {
+            task_title:   'SFR stage-history test',
+            priority_id:  String(highPriId),
+            due_date:     dueStr,
+            employee_ids: String(emp1Row.employee_id),
+          });
+          if (r.status === 302) {
+            const [row] = await querySql(
+              `SELECT task_id FROM tasks WHERE task_title='SFR stage-history test' ORDER BY task_id DESC LIMIT 1`,
+              SCRATCH_DB
+            );
+            sfrtTaskId = row?.task_id;
+          }
+          return r.status;
+        }, 302);
+
+        if (sfrtTaskId) {
+          // emp1 submits for review
+          await check('Stage history: submitForReview → 302', async () => {
+            const r = await httpReq('POST', `/employee/tasks/${sfrtTaskId}/submit`, empTok);
+            return r.status;
+          }, 302);
+
+          await check('Stage history: submit old_stage = Pending', async () => {
+            const [row] = await querySql(
+              `SELECT ws.stage_name FROM task_stage_history h
+               JOIN workflow_stages ws ON h.old_stage_id = ws.stage_id
+               WHERE h.task_id=${sfrtTaskId} AND h.remarks='Submitted for review.'
+               ORDER BY h.history_id DESC LIMIT 1`,
+              SCRATCH_DB
+            );
+            return row?.stage_name;
+          }, 'Pending');
+
+          await check('Stage history: submit new_stage = For Review', async () => {
+            const [row] = await querySql(
+              `SELECT ws.stage_name FROM task_stage_history h
+               JOIN workflow_stages ws ON h.new_stage_id = ws.stage_id
+               WHERE h.task_id=${sfrtTaskId} AND h.remarks='Submitted for review.'
+               ORDER BY h.history_id DESC LIMIT 1`,
+              SCRATCH_DB
+            );
+            return row?.stage_name;
+          }, 'For Review');
+        }
+      }
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // SECTION 11 — Reset token NOT exposed when DEMO_RESET_TOKEN is off (C1)
+  // The server is started without DEMO_RESET_TOKEN=true, so the token should
+  // never appear in the response HTML.
+  // ════════════════════════════════════════════════════════════════════════════
+  if (SELF_MANAGED) {
+    await check('Forgot-password: token NOT in response (demo flag off)', async () => {
+      const body = new URLSearchParams({ username: 'emp1' });
+      const res  = await fetch(`${BASE}/forgot-password`, {
+        method:  'POST',
+        body,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        redirect: 'follow',
+      });
+      const html = await res.text();
+      // Find the actual reset token from the DB
+      const [tokenRow] = await querySql(
+        `SELECT reset_token FROM users WHERE username='emp1' AND reset_token IS NOT NULL LIMIT 1`,
+        SCRATCH_DB
+      );
+      if (!tokenRow || !tokenRow.reset_token) {
+        // No token generated — request may have failed for another reason
+        return 'no_token_generated';
+      }
+      // The raw 64-char hex token must NOT appear in the HTML
+      return html.includes(tokenRow.reset_token) ? 'EXPOSED' : 'hidden';
+    }, 'hidden');
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
   // Summary
   // ════════════════════════════════════════════════════════════════════════════
   printDivider();

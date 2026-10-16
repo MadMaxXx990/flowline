@@ -43,10 +43,13 @@ const authenticate = async (req, res, next) => {
   }
 
   // Re-query the database so deactivated/deleted users cannot use stale tokens.
-  const { User, Role } = require('../models');
+  const { User, Role, Employee } = require('../models');
   const user = await User.findOne({
     where: { id: payload.id },
-    include: [{ model: Role, as: 'role' }],
+    include: [
+      { model: Role,     as: 'role' },
+      { model: Employee, as: 'employee', attributes: ['first_name', 'last_name'] },
+    ],
   });
 
   if (!user || user.is_deleted || user.status === 'inactive') {
@@ -60,6 +63,13 @@ const authenticate = async (req, res, next) => {
     role:       user.role?.role_name ?? payload.role,
     employeeId: user.employee_id,
   };
+
+  // Expose a display name for EJS views (sidebar avatar).
+  // Prefer "First Last" from the linked employee; fall back to username.
+  const empRecord = user.employee;
+  res.locals.displayName = (empRecord && empRecord.first_name)
+    ? `${empRecord.first_name} ${empRecord.last_name}`.trim()
+    : user.username;
 
   next();
 };

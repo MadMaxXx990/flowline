@@ -17,6 +17,7 @@ const logC   = require('../controllers/activityLogController');
 
 // All admin routes require authentication and the Administrator role.
 router.use(authenticate, authorize('Administrator'));
+router.use(require('../middleware/unreadCount'));
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 router.get('/dashboard', dashC.admin);
@@ -33,6 +34,7 @@ router.delete('/attendance/:id',   attnC.destroy);  // ?_method=DELETE  (Admin o
 // ── Reports ───────────────────────────────────────────────────────────────────
 router.get('/reports',              repC.index);
 router.get('/reports/export/excel', repC.exportExcel);
+router.get('/reports/export/pdf',   repC.exportPdf);
 
 // ── Notifications ─────────────────────────────────────────────────────────────
 router.get('/notifications',             notifC.index);

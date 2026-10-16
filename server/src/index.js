@@ -22,6 +22,17 @@ const { flashMiddleware } = require('./middleware/flash');
 
 const app = express();
 
+// ── Trust proxy ───────────────────────────────────────────────────────────────
+// Required for accurate req.ip behind a reverse proxy (nginx, etc.).
+// Set TRUST_PROXY=1 (or a specific IP/CIDR) in production.
+// Defaults to false so development behaviour is unchanged.
+const trustProxy = process.env.TRUST_PROXY;
+if (trustProxy && trustProxy !== 'false' && trustProxy !== '0') {
+  // Accept numeric hop count (e.g. "1") or a string address/CIDR
+  const val = /^\d+$/.test(trustProxy) ? parseInt(trustProxy, 10) : trustProxy;
+  app.set('trust proxy', val);
+}
+
 // ── View engine (EJS) ─────────────────────────────────────────────────────────
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
@@ -47,8 +58,8 @@ app.use(morgan('dev'));
 app.use(cookieParser(process.env.COOKIE_SECRET || process.env.JWT_SECRET));
 app.use(methodOverride('_method'));
 app.use(flashMiddleware);
-// Unread notification count — runs after authenticate sets req.user
-app.use(require('./middleware/unreadCount'));
+// Note: unreadCount is mounted inside each role router AFTER authenticate,
+// so req.user is always set when it runs.
 
 // ── Static assets ─────────────────────────────────────────────────────────────
 // Serve our own CSS/JS from public/
@@ -123,7 +134,8 @@ app.use((err, req, res, _next) => {
   }
 });
 
-const { runOverdueJob } = require('./jobs/overdueJob');
+const { runOverdueJob }           = require('./jobs/overdueJob');
+const { runDeadlineReminderJob }  = require('./jobs/deadlineReminderJob');
 const overdueIntervalMs = (parseInt(process.env.OVERDUE_CHECK_MINUTES) || 15) * 60 * 1000;
 
 // ── Sequelize model startup check (read-only — never alters tables) ───────────
@@ -132,7 +144,7 @@ const {
   Role, Department, Position, Team, Employee, User,
   WorkflowStage, TaskPriority, Task, TaskAssignment, TaskUpdate,
   TaskStageHistory, TaskComment, Approval, Attachment,
-  Notification, Attendance, ActivityLog,
+  Notification, Attendance, ActivityLog, TaskReminder,
 } = require('./models');
 
 async function checkModels() {
@@ -159,13 +171,14 @@ async function checkModels() {
       ['notifications',      () => Notification.findOne()],
       ['attendance',         () => Attendance.findOne()],
       ['activity_logs',      () => ActivityLog.findOne()],
+      ['task_reminders',     () => TaskReminder.findOne()],
     ];
 
     for (const [table, query] of checks) {
       await query();
       console.log(`[Sequelize] ✓ ${table}`);
     }
-    console.log('[Sequelize] All 18 models OK.');
+    console.log('[Sequelize] All 19 models OK.');
   } catch (err) {
     console.error('[Sequelize] Startup check failed:', err.message);
   }
@@ -186,5 +199,8 @@ app.listen(PORT, () => {
   console.log(`Flowline API running on http://localhost:${PORT}`);
   runOverdueJob();
   setInterval(runOverdueJob, overdueIntervalMs);
+  // Deadline reminders run on the same interval as the overdue job.
+  runDeadlineReminderJob();
+  setInterval(runDeadlineReminderJob, overdueIntervalMs);
   checkModels();
 });

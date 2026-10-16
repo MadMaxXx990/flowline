@@ -5,8 +5,9 @@ const { Notification } = require('../models');
  * Middleware that runs a single COUNT query and writes the result into
  * res.locals.unreadCount for use in EJS views (sidebar badge).
  *
- * Only fires when req.user is set (i.e. after authenticate).
- * Safe to mount globally — silently skips if not authenticated.
+ * Mount this AFTER authenticate inside each role router so req.user is
+ * guaranteed to be set. It will still silently short-circuit if called
+ * without req.user (defensive fallback).
  */
 const unreadCount = async (req, res, next) => {
   if (!req.user) { res.locals.unreadCount = 0; return next(); }

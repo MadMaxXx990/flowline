@@ -161,13 +161,19 @@ const forgot = async (req, res) => {
   await user.update({ reset_token: token, reset_expires: expires });
   await log(user.id, 'password_reset_request', 'Password reset requested.', 'users', user.id);
 
+  // Only expose the raw token when running in demo mode.
+  // In production (DEMO_RESET_TOKEN != 'true') the token is never returned
+  // in the HTTP response — it would be emailed instead.
+  const demoMode = process.env.DEMO_RESET_TOKEN === 'true';
+
   return res.render('auth/forgot', {
     error: null,
     result: {
       message:    safeMsg,
-      // Token returned for thesis-demo — remove in production
-      demo_token: token,
-      demo_note:  'In production this token would be emailed. Copy it to use the reset form.',
+      demo_token: demoMode ? token : null,
+      demo_note:  demoMode
+        ? 'Demo mode: copy this token to use the reset form. Set DEMO_RESET_TOKEN=false in production.'
+        : null,
     },
     username,
   });

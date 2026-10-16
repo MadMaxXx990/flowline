@@ -149,10 +149,12 @@
     <div class="col-md-4">
       <% if (locals.isEdit) { %>
         <label class="form-label small fw-semibold">New Password <span class="text-muted">(leave blank to keep)</span></label>
-        <input type="password" name="password" class="form-control" placeholder="Leave blank to keep" />
+        <input type="password" name="password" class="form-control" minlength="8" placeholder="Leave blank to keep" />
+        <div class="form-text">Minimum 8 characters if changing.</div>
       <% } else { %>
         <label class="form-label small fw-semibold">Password <span class="text-danger">*</span></label>
-        <input type="password" name="password" class="form-control" required minlength="6" />
+        <input type="password" name="password" class="form-control" required minlength="8" />
+        <div class="form-text">Minimum 8 characters.</div>
       <% } %>
     </div>
   </div>

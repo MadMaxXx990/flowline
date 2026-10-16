@@ -543,6 +543,8 @@ const approve = async (req, res) => {
   const histRemarks = approval_status === 'Approved' ? 'Approved.' : 'Returned for revision.';
 
   const { sequelize } = require('../models');
+  // Capture old stage BEFORE the transaction mutates the instance
+  const oldStageId = task.stage_id;
   await sequelize.transaction(async tx => {
     await Approval.create({
       task_id: id, approver_user_id: req.user.id,
@@ -551,7 +553,7 @@ const approve = async (req, res) => {
     await task.update({ stage_id: newStage.stage_id, updated_by_user_id: req.user.id }, { transaction: tx });
     await TaskStageHistory.create({
       task_id: id, changed_by_user_id: req.user.id,
-      old_stage_id: task.stage_id, new_stage_id: newStage.stage_id, remarks: histRemarks,
+      old_stage_id: oldStageId, new_stage_id: newStage.stage_id, remarks: histRemarks,
     }, { transaction: tx });
   });
 
@@ -589,11 +591,13 @@ const submitForReview = async (req, res) => {
   }
 
   const { sequelize } = require('../models');
+  // Capture old stage BEFORE the transaction mutates the instance
+  const oldStageIdSfr = task.stage_id;
   await sequelize.transaction(async tx => {
     await task.update({ stage_id: forReviewStage.stage_id, updated_by_user_id: req.user.id }, { transaction: tx });
     await TaskStageHistory.create({
       task_id: id, changed_by_user_id: req.user.id,
-      old_stage_id: task.stage_id, new_stage_id: forReviewStage.stage_id, remarks: 'Submitted for review.',
+      old_stage_id: oldStageIdSfr, new_stage_id: forReviewStage.stage_id, remarks: 'Submitted for review.',
     }, { transaction: tx });
   });
 
