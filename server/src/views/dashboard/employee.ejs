@@ -7,7 +7,7 @@
   <% const kpis = [
     { label:'My Tasks',    value: totalTasks,     icon:'bi-list-task',             color:'#4f46e5' },
     { label:'Completed',   value: completedCount, icon:'bi-check-circle-fill',     color:'#10b981' },
-    { label:'Overdue',     value: overdueCount,   icon:'bi-alarm-fill',            color:'#ef4444' },
+    { label:'Overdue',     value: overdueCount,   icon:'bi-alarm-fill',            color:'#f97316' },
     { label:'Due in 7 days', value: dueSoonCount, icon:'bi-calendar-event-fill',   color:'#f59e0b' },
   ]; %>
   <% kpis.forEach(k => { %>
@@ -31,11 +31,13 @@
   <div class="col-lg-5">
     <div class="card border-0 shadow-sm p-4">
       <div class="fw-semibold small mb-3">My Tasks by Stage</div>
-      <canvas id="stageChart" height="220"
-              data-chart-type="doughnut"
-              data-chart-labels="<%- JSON.stringify(stageCounts.map(s=>s.stage)) %>"
-              data-chart-values="<%- JSON.stringify(stageCounts.map(s=>s.count)) %>"
-              data-chart-colors='["#9ca3af","#3b82f6","#f59e0b","#10b981","#ef4444"]'></canvas>
+      <div style="position:relative;height:220px;">
+        <canvas id="stageChart"
+                data-chart-type="doughnut"
+                data-chart-labels="<%- JSON.stringify(stageCounts.map(s=>s.stage)) %>"
+                data-chart-values="<%- JSON.stringify(stageCounts.map(s=>s.count)) %>"
+                data-chart-colors='["#9ca3af","#3b82f6","#f59e0b","#10b981","#ef4444"]'></canvas>
+      </div>
     </div>
   </div>
   <!-- Recent notifications -->

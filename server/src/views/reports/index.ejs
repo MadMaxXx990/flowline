@@ -2,10 +2,16 @@
 
 <div class="d-flex justify-content-between align-items-center mb-4">
   <div class="page-heading">Reports</div>
-  <a href="<%= basePath %>/reports/export/excel?<%= new URLSearchParams(query).toString() %>"
-     class="btn btn-sm btn-success">
-    <i class="bi bi-file-earmark-excel me-1"></i>Export Excel
-  </a>
+  <div class="d-flex gap-2">
+    <a href="<%= basePath %>/reports/export/excel?<%= new URLSearchParams(query).toString() %>"
+       class="btn btn-sm btn-success">
+      <i class="bi bi-file-earmark-excel me-1"></i>Export Excel
+    </a>
+    <a href="<%= basePath %>/reports/export/pdf?<%= new URLSearchParams(query).toString() %>"
+       class="btn btn-sm btn-danger">
+      <i class="bi bi-file-earmark-pdf me-1"></i>Export PDF
+    </a>
+  </div>
 </div>
 
 <!-- Filter form -->
@@ -68,13 +74,13 @@
   <% const kpis = [
     { label:'Total Tasks',      value: totalTasks,     color:'#4f46e5' },
     { label:'Completed',        value: completedTasks, color:'#10b981' },
-    { label:'Overdue',          value: overdueTasks,   color:'#ef4444' },
+    { label:'Overdue',          value: overdueTasks,   color:'#f97316' },
     { label:'Completion Rate',  value: completionRate+'%', color:'#3b82f6' },
   ]; %>
   <% kpis.forEach(k => { %>
   <div class="col-6 col-md-3">
     <div class="card border-0 shadow-sm p-3 text-center">
-      <div style="font-size:1.8rem;font-weight:700;color:<%= k.color %>;"><%= k.value %></div>
+      <div style="font-size:1.8rem;font-weight:700;color:<%- k.color %>;"><%= k.value %></div>
       <div class="text-muted small"><%= k.label %></div>
     </div>
   </div>
@@ -84,33 +90,39 @@
 <!-- Charts row -->
 <div class="row g-4 mb-4">
   <div class="col-lg-4">
-    <div class="card border-0 shadow-sm p-4">
-      <div class="fw-semibold small mb-3">Tasks by Stage</div>
-      <canvas id="stageChart" height="200"
-              data-chart-type="doughnut"
-              data-chart-labels="<%- JSON.stringify(stageCounts.map(s=>s.stage)) %>"
-              data-chart-values="<%- JSON.stringify(stageCounts.map(s=>s.count)) %>"
-              data-chart-colors='["#9ca3af","#3b82f6","#f59e0b","#10b981","#ef4444"]'></canvas>
+    <div class="card border-0 shadow-sm p-3">
+      <div class="fw-semibold small mb-2">Tasks by Stage</div>
+      <div style="position:relative;height:160px;">
+        <canvas id="stageChart"
+                data-chart-type="doughnut"
+                data-chart-labels="<%- JSON.stringify(stageCounts.map(s=>s.stage)) %>"
+                data-chart-values="<%- JSON.stringify(stageCounts.map(s=>s.count)) %>"
+                data-chart-colors='["#9ca3af","#3b82f6","#f59e0b","#10b981","#ef4444"]'></canvas>
+      </div>
     </div>
   </div>
   <div class="col-lg-4">
-    <div class="card border-0 shadow-sm p-4">
-      <div class="fw-semibold small mb-3">Tasks by Priority</div>
-      <canvas id="priorityChart" height="200"
-              data-chart-type="doughnut"
-              data-chart-labels="<%- JSON.stringify(priorityCounts.map(p=>p.priority)) %>"
-              data-chart-values="<%- JSON.stringify(priorityCounts.map(p=>p.count)) %>"
-              data-chart-colors='["#9ca3af","#f59e0b","#ef4444"]'></canvas>
+    <div class="card border-0 shadow-sm p-3">
+      <div class="fw-semibold small mb-2">Tasks by Priority</div>
+      <div style="position:relative;height:160px;">
+        <canvas id="priorityChart"
+                data-chart-type="doughnut"
+                data-chart-labels="<%- JSON.stringify(priorityCounts.map(p=>p.priority)) %>"
+                data-chart-values="<%- JSON.stringify(priorityCounts.map(p=>p.count)) %>"
+                data-chart-colors='["#9ca3af","#f59e0b","#ef4444"]'></canvas>
+      </div>
     </div>
   </div>
   <div class="col-lg-4">
-    <div class="card border-0 shadow-sm p-4">
-      <div class="fw-semibold small mb-3">Attendance Summary</div>
-      <canvas id="attChart" height="200"
-              data-chart-type="doughnut"
-              data-chart-labels="<%- JSON.stringify((attSummary||[]).map(a=>a.attendance_status)) %>"
-              data-chart-values="<%- JSON.stringify((attSummary||[]).map(a=>+a.cnt)) %>"
-              data-chart-colors='["#10b981","#f59e0b","#9ca3af","#ef4444"]'></canvas>
+    <div class="card border-0 shadow-sm p-3">
+      <div class="fw-semibold small mb-2">Attendance Summary</div>
+      <div style="position:relative;height:160px;">
+        <canvas id="attChart"
+                data-chart-type="doughnut"
+                data-chart-labels="<%- JSON.stringify((attSummary||[]).map(a=>a.attendance_status)) %>"
+                data-chart-values="<%- JSON.stringify((attSummary||[]).map(a=>+a.cnt)) %>"
+                data-chart-colors='["#10b981","#f59e0b","#9ca3af","#ef4444"]'></canvas>
+      </div>
     </div>
   </div>
 </div>

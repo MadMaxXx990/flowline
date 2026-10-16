@@ -78,9 +78,8 @@ const listForUser = async (req, { page = 1, pageSize = 20 } = {}) => {
   const taskWhere = { is_deleted: false };
   if (req.user.role === 'Manager') {
     taskWhere.created_by_user_id = req.user.id;
-  } else if (req.user.role === 'Employee') {
-    taskWhere['$task.assignments.employee_id$'] = +req.user.employeeId;
   }
+  // Employee scope is enforced by the nested assignments include below, not here.
 
   // Optional task filter from query
   if (req.query.task_id && req.user.role !== 'Employee') {
