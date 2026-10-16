@@ -42,11 +42,13 @@
   <div class="col-lg-5">
     <div class="card border-0 shadow-sm p-4">
       <div class="fw-semibold small mb-3">My Tasks by Stage</div>
-      <canvas id="stageChart" height="200"
-              data-chart-type="doughnut"
-              data-chart-labels="<%- JSON.stringify(stageCounts.map(s=>s.stage)) %>"
-              data-chart-values="<%- JSON.stringify(stageCounts.map(s=>s.count)) %>"
-              data-chart-colors='["#9ca3af","#3b82f6","#f59e0b","#10b981","#ef4444"]'></canvas>
+      <div style="position:relative;height:200px;">
+        <canvas id="stageChart"
+                data-chart-type="doughnut"
+                data-chart-labels="<%- JSON.stringify(stageCounts.map(s=>s.stage)) %>"
+                data-chart-values="<%- JSON.stringify(stageCounts.map(s=>s.count)) %>"
+                data-chart-colors='["#9ca3af","#3b82f6","#f59e0b","#10b981","#ef4444"]'></canvas>
+      </div>
     </div>
   </div>
 </div>

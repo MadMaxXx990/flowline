@@ -23,6 +23,7 @@ router.post('/attendance/:id', attnC.update);  // ?_method=PUT
 // ── Reports ───────────────────────────────────────────────────────────────────
 router.get('/reports',              repC.index);
 router.get('/reports/export/excel', repC.exportExcel);
+router.get('/reports/export/pdf',   repC.exportPdf);
 
 // ── Notifications ─────────────────────────────────────────────────────────────
 router.get('/notifications',             notifC.index);
@@ -34,7 +35,7 @@ router.get('/files', attC.filesIndex);
 
 // ── Tasks ─────────────────────────────────────────────────────────────────────
 router.get('/tasks',            taskC.board);
-router.get('/tasks/new',        taskC.newForm);
+router.get('/tasks/new',        taskC.newForm);   // must be before /:id
 router.post('/tasks',           upload.array('attachments', 10), taskC.store);
 router.get('/tasks/:id',        taskC.show);
 router.get('/tasks/:id/edit',   taskC.editForm);

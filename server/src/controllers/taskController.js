@@ -199,7 +199,7 @@ const newForm = async (req, res) => {
   const basePath = req.user.role === 'Administrator' ? '/admin' : '/manager';
   res.render('tasks/new', {
     role: req.user.role, basePath, user: req.user,
-    currentPath: `${basePath}/tasks`,
+    currentPath: `${basePath}/tasks/new`,
     ...formData,
     formValues: { task_title: '', task_description: '', priority_id: '', start_date: '', due_date: '', employee_ids: [] },
     error: null,
