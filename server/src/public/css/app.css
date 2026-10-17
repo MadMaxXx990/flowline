@@ -38,3 +38,13 @@ body {
 
 /* Page heading */
 .page-heading { font-weight: 700; font-size: 1.25rem; color: #1e1b4b; margin-bottom: .25rem; }
+
+/* ── Chart containers ────────────────────────────────────────────────────────
+ * Every <canvas data-chart-type> must sit inside a .chart-box.
+ * position:relative + fixed height is required for Chart.js when
+ * maintainAspectRatio:false (the canvas fills the box exactly).
+ */
+.chart-box          { position: relative; height: 260px; }
+.chart-box-sm       { position: relative; height: 180px; }
+.chart-box-lg       { position: relative; height: 320px; }
+.chart-box canvas   { position: absolute; inset: 0; }

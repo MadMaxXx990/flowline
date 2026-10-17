@@ -5,18 +5,18 @@
 <!-- KPI row -->
 <div class="row g-3 mb-4">
   <% const kpis = [
-    { label:'Employees',     value: totalEmployees,  icon:'bi-people-fill',         color:'#4f46e5' },
-    { label:'Active Tasks',  value: totalTasks - completedCount, icon:'bi-kanban-fill', color:'#3b82f6' },
-    { label:'Overdue',       value: overdueCount,    icon:'bi-alarm-fill',           color:'#ef4444' },
-    { label:'For Review',    value: forReviewCount,  icon:'bi-eye-fill',             color:'#f59e0b' },
-    { label:'Present Today', value: presentToday,    icon:'bi-calendar-check-fill',  color:'#10b981' },
+    { label:'Employees',     value: totalEmployees,               icon:'bi-people-fill',         color:'#4f46e5' },
+    { label:'Active Tasks',  value: totalTasks - completedCount,  icon:'bi-kanban-fill',          color:'#3b82f6' },
+    { label:'Overdue',       value: overdueCount,                 icon:'bi-alarm-fill',           color:'#f97316' },
+    { label:'For Review',    value: forReviewCount,               icon:'bi-eye-fill',             color:'#f59e0b' },
+    { label:'Present Today', value: presentToday,                 icon:'bi-calendar-check-fill',  color:'#10b981' },
   ]; %>
   <% kpis.forEach(k => { %>
   <div class="col-6 col-md-4 col-xl">
     <div class="card border-0 shadow-sm p-3 d-flex flex-row align-items-center gap-3">
       <div class="rounded-3 d-flex align-items-center justify-content-center flex-shrink-0"
-           style="width:44px;height:44px;background:<%= k.color %>20;">
-        <i class="bi <%= k.icon %>" style="color:<%= k.color %>;font-size:1.2rem;"></i>
+           style="width:44px;height:44px;background:<%- k.color %>20;">
+        <i class="bi <%= k.icon %>" style="color:<%- k.color %>;font-size:1.2rem;"></i>
       </div>
       <div>
         <div style="font-size:1.5rem;font-weight:700;line-height:1.1;"><%= k.value %></div>
@@ -27,55 +27,125 @@
   <% }) %>
 </div>
 
-<!-- Charts row -->
+<!-- Charts row 1: Weekly + Stage + Priority -->
 <div class="row g-4 mb-4">
-  <!-- Weekly completions -->
+
+  <!-- Weekly completions — vertical bar -->
   <div class="col-lg-6">
     <div class="card border-0 shadow-sm p-4">
       <div class="fw-semibold small mb-3">Completed Tasks — Last 7 Days</div>
-      <canvas id="weeklyChart" height="160"
-              data-chart-type="bar"
-              data-chart-labels="<%- JSON.stringify(weeklyChart.map(d=>d.label)) %>"
-              data-chart-values="<%- JSON.stringify(weeklyChart.map(d=>d.count)) %>"
-              data-chart-color="#4f46e5"></canvas>
+      <% if (weeklyChart.reduce((a,d)=>a+d.count,0) === 0) { %>
+        <p class="text-muted small py-4 text-center mb-0" data-chart-empty>No completed tasks in the last 7 days.</p>
+      <% } else { %>
+      <div class="chart-box-sm">
+        <canvas id="weeklyChart"
+                role="img"
+                aria-label="Completed tasks last 7 days: <%- weeklyChart.map(d=>d.label+' '+d.count).join(', ') %>"
+                data-chart-type="bar"
+                data-chart-title="Completed Tasks — Last 7 Days"
+                data-chart-labels="<%- JSON.stringify(weeklyChart.map(d=>d.label)) %>"
+                data-chart-values="<%- JSON.stringify(weeklyChart.map(d=>d.count)) %>"
+                data-chart-color="#4f46e5"></canvas>
+      </div>
+      <% } %>
     </div>
   </div>
-  <!-- Stage breakdown -->
+
+  <!-- Tasks by Stage — horizontal bar -->
   <div class="col-lg-3">
     <div class="card border-0 shadow-sm p-4">
-      <div class="fw-semibold small mb-3">Tasks by Stage</div>
-      <canvas id="stageChart" height="200"
-              data-chart-type="doughnut"
-              data-chart-labels="<%- JSON.stringify(stageCounts.map(s=>s.stage)) %>"
-              data-chart-values="<%- JSON.stringify(stageCounts.map(s=>s.count)) %>"
-              data-chart-colors='["#9ca3af","#3b82f6","#f59e0b","#10b981","#ef4444"]'></canvas>
+      <div class="fw-semibold small mb-2">Tasks by Stage</div>
+      <%
+        // Fixed stage order regardless of DB order
+        const stageOrder = ['Pending','In Progress','For Review','Completed','Overdue'];
+        const stageMap   = Object.fromEntries((stageCounts||[]).map(s=>[s.stage,s.count]));
+        const stageLabels = stageOrder;
+        const stageVals   = stageOrder.map(s => stageMap[s] ?? 0);
+        const stageTotal  = stageVals.reduce((a,v)=>a+v,0);
+        const stageMaxIdx = stageVals.reduce((mi,v,i)=>v>stageVals[mi]?i:mi,0);
+      %>
+      <% if (stageTotal === 0) { %>
+        <p class="text-muted small py-4 text-center mb-0">No tasks yet.</p>
+      <% } else { %>
+      <div class="chart-box">
+        <canvas id="stageChart"
+                role="img"
+                aria-label="Tasks by stage: <%- stageLabels.map((l,i)=>l+' '+stageVals[i]).join(', ') %>"
+                data-chart-type="hbar"
+                data-chart-title="Tasks by Stage"
+                data-chart-labels="<%- JSON.stringify(stageLabels) %>"
+                data-chart-values="<%- JSON.stringify(stageVals) %>"></canvas>
+      </div>
+      <p class="text-muted small mt-2 mb-0">Most tasks are <strong><%= stageLabels[stageMaxIdx] %></strong> (<%= stageVals[stageMaxIdx] %> of <%= stageTotal %>).</p>
+      <% } %>
     </div>
   </div>
-  <!-- Priority breakdown -->
+
+  <!-- Tasks by Priority — horizontal bar -->
   <div class="col-lg-3">
     <div class="card border-0 shadow-sm p-4">
-      <div class="fw-semibold small mb-3">Tasks by Priority</div>
-      <canvas id="priorityChart" height="200"
-              data-chart-type="doughnut"
-              data-chart-labels="<%- JSON.stringify(priorityCounts.map(p=>p.priority)) %>"
-              data-chart-values="<%- JSON.stringify(priorityCounts.map(p=>p.count)) %>"
-              data-chart-colors='["#9ca3af","#f59e0b","#ef4444"]'></canvas>
+      <div class="fw-semibold small mb-2">Tasks by Priority</div>
+      <%
+        const prioOrder  = ['High','Medium','Low'];
+        const prioMap    = Object.fromEntries((priorityCounts||[]).map(p=>[p.priority,p.count]));
+        const prioLabels = prioOrder;
+        const prioVals   = prioOrder.map(p => prioMap[p] ?? 0);
+        const prioColors = ['#ef4444','#f59e0b','#10b981'];
+        const prioTotal  = prioVals.reduce((a,v)=>a+v,0);
+        const prioMaxIdx = prioVals.reduce((mi,v,i)=>v>prioVals[mi]?i:mi,0);
+      %>
+      <% if (prioTotal === 0) { %>
+        <p class="text-muted small py-4 text-center mb-0">No tasks yet.</p>
+      <% } else { %>
+      <div class="chart-box">
+        <canvas id="priorityChart"
+                role="img"
+                aria-label="Tasks by priority: <%- prioLabels.map((l,i)=>l+' '+prioVals[i]).join(', ') %>"
+                data-chart-type="hbar"
+                data-chart-title="Tasks by Priority"
+                data-chart-labels="<%- JSON.stringify(prioLabels) %>"
+                data-chart-values="<%- JSON.stringify(prioVals) %>"
+                data-chart-colors="<%- JSON.stringify(prioColors) %>"></canvas>
+      </div>
+      <p class="text-muted small mt-2 mb-0">Most tasks are <strong><%= prioLabels[prioMaxIdx] %></strong> priority (<%= prioVals[prioMaxIdx] %> of <%= prioTotal %>).</p>
+      <% } %>
     </div>
   </div>
+
 </div>
 
-<!-- Department bar + Recent tasks -->
+<!-- Charts row 2: Department bar + Recent tasks -->
 <div class="row g-4 mb-4">
+
+  <!-- Tasks by Department — horizontal bar, sorted high→low -->
   <div class="col-lg-5">
     <div class="card border-0 shadow-sm p-4">
-      <div class="fw-semibold small mb-3">Tasks by Department</div>
-      <canvas id="deptChart" height="200"
-              data-chart-type="bar"
-              data-chart-labels="<%- JSON.stringify(deptCounts.map(d=>d.department)) %>"
-              data-chart-values="<%- JSON.stringify(deptCounts.map(d=>d.count)) %>"
-              data-chart-color="#4f46e5"></canvas>
+      <div class="fw-semibold small mb-2">Tasks by Department</div>
+      <%
+        const sortedDepts = [...(deptCounts||[])].sort((a,b)=>b.count-a.count);
+        const deptLabels  = sortedDepts.map(d=>d.department);
+        const deptVals    = sortedDepts.map(d=>d.count);
+        const deptTotal   = deptVals.reduce((a,v)=>a+v,0);
+      %>
+      <% if (deptTotal === 0) { %>
+        <p class="text-muted small py-4 text-center mb-0">No department data yet.</p>
+      <% } else { %>
+      <div class="chart-box-lg">
+        <canvas id="deptChart"
+                role="img"
+                aria-label="Tasks by department: <%- deptLabels.map((l,i)=>l+' '+deptVals[i]).join(', ') %>"
+                data-chart-type="hbar"
+                data-chart-title="Tasks by Department"
+                data-chart-labels="<%- JSON.stringify(deptLabels) %>"
+                data-chart-values="<%- JSON.stringify(deptVals) %>"
+                data-chart-color="#4f46e5"></canvas>
+      </div>
+      <p class="text-muted small mt-2 mb-0" data-chart-summary></p>
+      <% } %>
     </div>
   </div>
+
+  <!-- Recent tasks -->
   <div class="col-lg-7">
     <div class="card border-0 shadow-sm">
       <div class="px-3 pt-3 pb-2 border-bottom fw-semibold small">Recent Tasks</div>
@@ -104,6 +174,7 @@
       </table>
     </div>
   </div>
+
 </div>
 
 <%- include('../partials/layout_end') %>

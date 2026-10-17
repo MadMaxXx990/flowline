@@ -5,17 +5,17 @@
 <!-- KPI row -->
 <div class="row g-3 mb-4">
   <% const kpis = [
-    { label:'My Tasks',    value: totalTasks,     icon:'bi-list-task',             color:'#4f46e5' },
-    { label:'Completed',   value: completedCount, icon:'bi-check-circle-fill',     color:'#10b981' },
-    { label:'Overdue',     value: overdueCount,   icon:'bi-alarm-fill',            color:'#f97316' },
-    { label:'Due in 7 days', value: dueSoonCount, icon:'bi-calendar-event-fill',   color:'#f59e0b' },
+    { label:'My Tasks',      value: totalTasks,     icon:'bi-list-task',           color:'#4f46e5' },
+    { label:'Completed',     value: completedCount, icon:'bi-check-circle-fill',   color:'#10b981' },
+    { label:'Overdue',       value: overdueCount,   icon:'bi-alarm-fill',          color:'#f97316' },
+    { label:'Due in 7 days', value: dueSoonCount,   icon:'bi-calendar-event-fill', color:'#f59e0b' },
   ]; %>
   <% kpis.forEach(k => { %>
   <div class="col-6 col-md-3">
     <div class="card border-0 shadow-sm p-3 d-flex flex-row align-items-center gap-3">
       <div class="rounded-3 d-flex align-items-center justify-content-center flex-shrink-0"
-           style="width:44px;height:44px;background:<%= k.color %>20;">
-        <i class="bi <%= k.icon %>" style="color:<%= k.color %>;font-size:1.2rem;"></i>
+           style="width:44px;height:44px;background:<%- k.color %>20;">
+        <i class="bi <%= k.icon %>" style="color:<%- k.color %>;font-size:1.2rem;"></i>
       </div>
       <div>
         <div style="font-size:1.5rem;font-weight:700;line-height:1.1;"><%= k.value %></div>
@@ -27,19 +27,36 @@
 </div>
 
 <div class="row g-4">
-  <!-- Stage breakdown -->
+
+  <!-- Tasks by Stage — horizontal bar -->
   <div class="col-lg-5">
     <div class="card border-0 shadow-sm p-4">
-      <div class="fw-semibold small mb-3">My Tasks by Stage</div>
-      <div style="position:relative;height:220px;">
+      <div class="fw-semibold small mb-2">My Tasks by Stage</div>
+      <%
+        const stageOrder = ['Pending','In Progress','For Review','Completed','Overdue'];
+        const stageMap   = Object.fromEntries((stageCounts||[]).map(s=>[s.stage,s.count]));
+        const stageLabels = stageOrder;
+        const stageVals   = stageOrder.map(s => stageMap[s] ?? 0);
+        const stageTotal  = stageVals.reduce((a,v)=>a+v,0);
+        const stageMaxIdx = stageVals.reduce((mi,v,i)=>v>stageVals[mi]?i:mi,0);
+      %>
+      <% if (stageTotal === 0) { %>
+        <p class="text-muted small py-4 text-center mb-0">No tasks yet.</p>
+      <% } else { %>
+      <div class="chart-box">
         <canvas id="stageChart"
-                data-chart-type="doughnut"
-                data-chart-labels="<%- JSON.stringify(stageCounts.map(s=>s.stage)) %>"
-                data-chart-values="<%- JSON.stringify(stageCounts.map(s=>s.count)) %>"
-                data-chart-colors='["#9ca3af","#3b82f6","#f59e0b","#10b981","#ef4444"]'></canvas>
+                role="img"
+                aria-label="My tasks by stage: <%- stageLabels.map((l,i)=>l+' '+stageVals[i]).join(', ') %>"
+                data-chart-type="hbar"
+                data-chart-title="My Tasks by Stage"
+                data-chart-labels="<%- JSON.stringify(stageLabels) %>"
+                data-chart-values="<%- JSON.stringify(stageVals) %>"></canvas>
       </div>
+      <p class="text-muted small mt-2 mb-0">Most tasks are <strong><%= stageLabels[stageMaxIdx] %></strong> (<%= stageVals[stageMaxIdx] %> of <%= stageTotal %>).</p>
+      <% } %>
     </div>
   </div>
+
   <!-- Recent notifications -->
   <div class="col-lg-7">
     <div class="card border-0 shadow-sm">
@@ -62,6 +79,7 @@
       <% } %>
     </div>
   </div>
+
 </div>
 
 <%- include('../partials/layout_end') %>
