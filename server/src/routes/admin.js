@@ -80,13 +80,14 @@ router.delete('/teams/:id',   teamC.destroy);
 // ── Employees ─────────────────────────────────────────────────────────────────
 // Note: photo is on a shared route in index.js — available to all logged-in roles.
 
-router.get('/employees',              empC.index);
-router.get('/employees/new',          empC.newForm);
-router.post('/employees',             upload.single('profile_photo'), empC.store);
-router.get('/employees/:id',          empC.show);
-router.get('/employees/:id/edit',     empC.editForm);
-router.post('/employees/:id',         upload.single('profile_photo'), empC.update);
-router.delete('/employees/:id',       empC.destroy);
+router.get('/employees',                   empC.index);
+router.get('/employees/new',               empC.newForm);
+router.get('/employees/username-check',    empC.usernameCheck);   // must be before /:id
+router.post('/employees',                  upload.single('profile_photo'), empC.store);
+router.get('/employees/:id',               empC.show);
+router.get('/employees/:id/edit',          empC.editForm);
+router.post('/employees/:id',              upload.single('profile_photo'), empC.update);
+router.delete('/employees/:id',            empC.destroy);
 
 module.exports = router;
 module.exports.loadTeamsData = teamC.loadTeamsData;

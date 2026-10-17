@@ -23,7 +23,7 @@
   </div>
 <% } %>
 
-<form method="POST" action="<%= actionUrl %>" enctype="multipart/form-data">
+<form method="POST" action="<%= actionUrl %>" enctype="multipart/form-data" id="emp-create-form">
   <% if (locals.isEdit) { %>
     <input type="hidden" name="_method" value="PUT" />
   <% } %>
@@ -33,11 +33,11 @@
   <div class="row g-3 mb-4">
     <div class="col-md-6">
       <label class="form-label small fw-semibold">First Name <span class="text-danger">*</span></label>
-      <input name="first_name" class="form-control" required value="<%= f.first_name || '' %>" />
+      <input id="empFirstName" name="first_name" class="form-control" required value="<%= f.first_name || '' %>" />
     </div>
     <div class="col-md-6">
       <label class="form-label small fw-semibold">Last Name <span class="text-danger">*</span></label>
-      <input name="last_name" class="form-control" required value="<%= f.last_name || '' %>" />
+      <input id="empLastName" name="last_name" class="form-control" required value="<%= f.last_name || '' %>" />
     </div>
     <div class="col-md-6">
       <label class="form-label small fw-semibold">Email <span class="text-danger">*</span></label>
@@ -108,10 +108,6 @@
     </div>
     <div class="col-md-6">
       <label class="form-label small fw-semibold">Team <span class="text-muted">(optional)</span></label>
-      <!--
-        app.js will populate / filter this select based on the chosen department.
-        All team options are rendered here; hidden ones are toggled via JS.
-      -->
       <select name="team_id" id="empTeamSelect" class="form-select" data-team-lead-select>
         <option value="">None</option>
         <% (teams || []).forEach(t => { %>
@@ -142,10 +138,19 @@
         <% }) %>
       </select>
     </div>
+
     <div class="col-md-4">
       <label class="form-label small fw-semibold">Username <span class="text-danger">*</span></label>
-      <input name="username" class="form-control" required value="<%= f.username || '' %>" />
+      <input id="empUsername" name="username" class="form-control" required
+             value="<%= f.username || '' %>"
+             autocomplete="off"
+             <% if (!locals.isEdit) { %>data-username-suggest<% } %> />
+      <% if (!locals.isEdit) { %>
+        <%# status line — populated by employee-form.js, hidden on edit %>
+        <div id="usernameStatus" class="form-text" aria-live="polite"></div>
+      <% } %>
     </div>
+
     <div class="col-md-4">
       <% if (locals.isEdit) { %>
         <label class="form-label small fw-semibold">New Password <span class="text-muted">(leave blank to keep)</span></label>
@@ -153,8 +158,43 @@
         <div class="form-text">Minimum 8 characters if changing.</div>
       <% } else { %>
         <label class="form-label small fw-semibold">Password <span class="text-danger">*</span></label>
-        <input type="password" name="password" class="form-control" required minlength="8" />
-        <div class="form-text">Minimum 8 characters.</div>
+        <%# Wrapper needed so the icon buttons sit inside the input group %>
+        <div class="input-group">
+          <input type="password"
+                 id="empPassword"
+                 name="password"
+                 class="form-control"
+                 required
+                 minlength="8"
+                 autocomplete="new-password"
+                 data-password-field />
+          <%# Show/Hide %>
+          <button type="button"
+                  class="btn btn-outline-secondary"
+                  id="pwToggleBtn"
+                  title="Show / hide password"
+                  data-pw-toggle>
+            <i class="bi bi-eye" id="pwToggleIcon"></i>
+          </button>
+          <%# Copy %>
+          <button type="button"
+                  class="btn btn-outline-secondary"
+                  title="Copy password"
+                  data-pw-copy>
+            <i class="bi bi-clipboard"></i>
+          </button>
+          <%# Regenerate %>
+          <button type="button"
+                  class="btn btn-outline-secondary"
+                  title="Generate a new password"
+                  data-pw-regen>
+            <i class="bi bi-arrow-clockwise"></i>
+          </button>
+        </div>
+        <div class="form-text">
+          Give this temporary password to the employee and ask them to change it.
+          Minimum 8 characters.
+        </div>
       <% } %>
     </div>
   </div>

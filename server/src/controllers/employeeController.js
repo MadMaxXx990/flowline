@@ -129,6 +129,10 @@ const store = async (req, res) => {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return renderError('Please enter a valid email address.');
   }
+  // Username allowed pattern: letters, digits, dot, underscore, 3-30 chars
+  if (!USERNAME_RE.test(username)) {
+    return renderError('Username may only contain letters, digits, dots and underscores (3–30 characters).');
+  }
   // Password minimum length
   if (password.length < 8) {
     return renderError('Password must be at least 8 characters.');
@@ -138,9 +142,18 @@ const store = async (req, res) => {
   const emailExists = await Employee.findOne({ where: { email } });
   if (emailExists) return renderError('That email address is already in use.');
 
-  // Unique username
+  // Unique username — if taken, suggest the next free one
   const userExists = await User.findOne({ where: { username } });
-  if (userExists) return renderError('That username is already taken.');
+  if (userExists) {
+    let suggestion = '';
+    for (let n = 2; n <= 99; n++) {
+      const attempt = `${username}${n}`;
+      const taken   = await User.findOne({ where: { username: attempt }, attributes: ['id'] });
+      if (!taken) { suggestion = attempt; break; }
+    }
+    const hint = suggestion ? ` Try "${suggestion}".` : '';
+    return renderError(`Username "${username}" is already taken.${hint}`);
+  }
 
   const profile_photo_url = req.file ? `uploads/${req.file.filename}` : null;
 
@@ -166,7 +179,7 @@ const store = async (req, res) => {
   });
 
   await log(req.user.id, 'create', `Created employee: ${first_name} ${last_name}`, 'employees', emp.employee_id);
-  setFlash(res, 'success', `Employee ${first_name} ${last_name} created.`);
+  setFlash(res, 'success', `Employee ${first_name} ${last_name} created. Username: ${username}`);
   return res.redirect('/admin/employees');
 };
 
@@ -332,6 +345,58 @@ const destroy = async (req, res) => {
   return res.redirect('/admin/employees');
 };
 
+// ── USERNAME PATTERN ─────────────────────────────────────────────────────────
+// Letters, digits, dot, underscore. 3–30 characters.
+const USERNAME_RE = /^[a-zA-Z0-9._]{3,30}$/;
+
+/**
+ * Build a normalised username base from first + last name:
+ *   - Decompose Unicode to strip combining accents (NFD → strip Mn category)
+ *   - Remove anything that is not a-z or 0-9
+ *   - firstname.lastname, all lowercase
+ */
+function buildUsernameBase(firstName, lastName) {
+  const clean = str =>
+    str.normalize('NFD')
+       .replace(/[\u0300-\u036f]/g, '')   // strip combining accents
+       .toLowerCase()
+       .replace(/[^a-z0-9]/g, '');         // keep only letters/digits
+  const f = clean(firstName  || '');
+  const l = clean(lastName   || '');
+  if (!f && !l) return '';
+  if (!l) return f;
+  if (!f) return l;
+  return `${f}.${l}`;
+}
+
+// ── USERNAME CHECK (JSON, Admin only) ────────────────────────────────────────
+const usernameCheck = async (req, res) => {
+  const candidate = (req.query.u || '').trim().toLowerCase();
+
+  // Must match allowed pattern before we even query
+  if (!USERNAME_RE.test(candidate)) {
+    return res.json({ available: false, suggestion: '' });
+  }
+
+  const taken = await User.findOne({
+    where: { username: candidate },
+    attributes: ['id'],
+  });
+
+  if (!taken) {
+    return res.json({ available: true, suggestion: candidate });
+  }
+
+  // Find next free candidate by appending 2, 3, …
+  let suggestion = '';
+  for (let n = 2; n <= 99; n++) {
+    const attempt = `${candidate}${n}`;
+    const exists  = await User.findOne({ where: { username: attempt }, attributes: ['id'] });
+    if (!exists) { suggestion = attempt; break; }
+  }
+  return res.json({ available: false, suggestion });
+};
+
 // ── PROFILE PHOTO (authenticated stream) ─────────────────────────────────────
 const photo = async (req, res) => {
   const emp = await Employee.findOne({
@@ -354,4 +419,4 @@ const photo = async (req, res) => {
   return res.sendFile(requested);
 };
 
-module.exports = { index, show, newForm, store, editForm, update, destroy, photo };
+module.exports = { index, show, newForm, store, editForm, update, destroy, photo, usernameCheck, buildUsernameBase, USERNAME_RE };

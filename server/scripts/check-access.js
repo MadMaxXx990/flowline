@@ -727,6 +727,124 @@ async function main() {
   }
 
   // ════════════════════════════════════════════════════════════════════════════
+  // SECTION 12 — Username-check endpoint
+  // ════════════════════════════════════════════════════════════════════════════
+
+  // 12a — Admin: unused candidate → available: true
+  await check('Username-check: unused name → available true', async () => {
+    const r    = await httpReq('GET', '/admin/employees/username-check?u=unused.zzztestuser99', adminTok);
+    const json = await r.json();
+    return json.available === true;
+  }, true);
+
+  // 12b — Admin: existing seed username (emp1) → available: false, suggestion differs
+  await check('Username-check: "emp1" → available false', async () => {
+    const r    = await httpReq('GET', '/admin/employees/username-check?u=emp1', adminTok);
+    const json = await r.json();
+    return json.available === false;
+  }, true);
+
+  await check('Username-check: "emp1" → suggestion differs from "emp1"', async () => {
+    const r    = await httpReq('GET', '/admin/employees/username-check?u=emp1', adminTok);
+    const json = await r.json();
+    return typeof json.suggestion === 'string' && json.suggestion !== 'emp1' && json.suggestion.length > 0;
+  }, true);
+
+  // 12c — Manager → 403
+  await check('Username-check: Manager → 403', async () => {
+    const r = await httpReq('GET', '/admin/employees/username-check?u=whatever', mgrTok);
+    return r.status;
+  }, 403);
+
+  // 12d — Employee → 403
+  await check('Username-check: Employee → 403', async () => {
+    const r = await httpReq('GET', '/admin/employees/username-check?u=whatever', empTok);
+    return r.status;
+  }, 403);
+
+  // 12e — Unauthenticated → 302 redirect to /login
+  await check('Username-check: no cookie → 302', async () => {
+    const r = await httpReq('GET', '/admin/employees/username-check?u=whatever', null);
+    return r.status;
+  }, 302);
+
+  // 12f — Create two employees with the same name → both succeed with different usernames
+  if (SELF_MANAGED) {
+    const due = new Date(); due.setDate(due.getDate() + 30);
+    const makeEmpBody = (suffix) => ({
+      first_name:      'Maxel',
+      last_name:       'Mantalaba',
+      email:           `maxel.mantalaba${suffix}@test.invalid`,
+      username:        '',          // intentionally blank — server will reject,
+      password:        'TestPass8!',
+      role_id:         '',
+      department_id:   '',
+      position_id:     '',
+    });
+
+    // We need valid role_id and position_id to create employees through the form.
+    // Look them up from the scratch DB.
+    const [anyRole]     = await querySql('SELECT role_id FROM roles ORDER BY role_id LIMIT 1', SCRATCH_DB);
+    const [anyPosition] = await querySql('SELECT position_id FROM positions ORDER BY position_id LIMIT 1', SCRATCH_DB);
+    const roleId     = anyRole?.role_id     || '';
+    const positionId = anyPosition?.position_id || '';
+
+    // Determine the expected auto-suggested usernames by calling the endpoint
+    const r1   = await httpReq('GET', '/admin/employees/username-check?u=maxel.mantalaba', adminTok);
+    const j1   = await r1.json();
+    const user1 = j1.available ? 'maxel.mantalaba' : j1.suggestion;
+
+    // POST first employee using that username
+    let created1Id = null;
+    await check('Two same-name employees: first create → 302', async () => {
+      const r = await httpReq('POST', '/admin/employees', adminTok, {
+        first_name: 'Maxel', last_name: 'Mantalaba',
+        email: 'maxel.mantalaba1st@test.invalid',
+        username: user1, password: 'TestPass8!',
+        role_id: String(roleId), position_id: String(positionId),
+      });
+      if (r.status === 302) {
+        const rows = await querySql(
+          `SELECT employee_id FROM employees WHERE email='maxel.mantalaba1st@test.invalid' LIMIT 1`,
+          SCRATCH_DB
+        );
+        created1Id = rows[0]?.employee_id;
+      }
+      return r.status;
+    }, 302);
+
+    // Check what the second username suggestion is now
+    const r2   = await httpReq('GET', `/admin/employees/username-check?u=maxel.mantalaba`, adminTok);
+    const j2   = await r2.json();
+    const user2 = j2.available ? 'maxel.mantalaba' : j2.suggestion;
+
+    let created2Id = null;
+    await check('Two same-name employees: second create → 302', async () => {
+      const r = await httpReq('POST', '/admin/employees', adminTok, {
+        first_name: 'Maxel', last_name: 'Mantalaba',
+        email: 'maxel.mantalaba2nd@test.invalid',
+        username: user2, password: 'TestPass8!',
+        role_id: String(roleId), position_id: String(positionId),
+      });
+      if (r.status === 302) {
+        const rows = await querySql(
+          `SELECT employee_id FROM employees WHERE email='maxel.mantalaba2nd@test.invalid' LIMIT 1`,
+          SCRATCH_DB
+        );
+        created2Id = rows[0]?.employee_id;
+      }
+      return r.status;
+    }, 302);
+
+    await check('Two same-name employees: usernames differ', async () => {
+      if (!created1Id || !created2Id) return false;
+      const [u1] = await querySql(`SELECT username FROM users WHERE employee_id=${created1Id} LIMIT 1`, SCRATCH_DB);
+      const [u2] = await querySql(`SELECT username FROM users WHERE employee_id=${created2Id} LIMIT 1`, SCRATCH_DB);
+      return u1?.username !== u2?.username;
+    }, true);
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
   // Summary
   // ════════════════════════════════════════════════════════════════════════════
   printDivider();
