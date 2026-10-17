@@ -1,0 +1,212 @@
+<%- include('../partials/layout_start') %>
+
+<div class="page-heading mb-4">My Profile</div>
+
+<div class="row g-4">
+
+  <!-- ── Left column: avatar card + read-only info ─────────────────────────── -->
+  <div class="col-lg-4">
+
+    <!-- Avatar / photo -->
+    <div class="card border-0 shadow-sm p-4 text-center mb-3">
+      <%
+        const _initial = (emp ? (emp.first_name || '?') : (dbUser ? dbUser.username : '?'))[0].toUpperCase();
+        const statusMap = { Active:'success', 'On Leave':'warning', Inactive:'secondary', Archived:'danger' };
+        const _sc = emp ? (statusMap[emp.status] || 'secondary') : 'secondary';
+      %>
+      <% if (emp && emp.profile_photo_url) { %>
+        <img src="/employees/<%= emp.employee_id %>/photo"
+             alt="Profile photo"
+             class="rounded-circle mx-auto mb-3 d-block"
+             style="width:80px;height:80px;object-fit:cover;" />
+      <% } else { %>
+        <div class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center fw-bold mx-auto mb-3"
+             style="width:80px;height:80px;font-size:2rem;"><%= _initial %></div>
+      <% } %>
+
+      <% if (emp) { %>
+        <h5 class="fw-bold mb-0"><%= emp.first_name %> <%= emp.last_name %></h5>
+        <p class="text-muted small mb-2"><%= emp.position ? emp.position.position_name : '' %></p>
+        <span class="badge bg-<%= _sc %>-subtle text-<%= _sc %> border"><%= emp.status %></span>
+      <% } else { %>
+        <h5 class="fw-bold mb-0"><%= dbUser ? dbUser.username : '—' %></h5>
+        <p class="text-muted small mb-2"><%= role %></p>
+      <% } %>
+
+      <% if (emp) { %>
+      <!-- Photo upload form -->
+      <hr class="my-3" />
+      <form method="POST" action="<%= basePath %>/profile/photo"
+            enctype="multipart/form-data" class="text-start">
+        <label class="form-label small fw-semibold">Update Photo</label>
+        <div class="input-group input-group-sm">
+          <input type="file" name="profile_photo" class="form-control"
+                 accept="image/png,image/jpeg" required />
+          <button type="submit" class="btn btn-outline-primary btn-sm">Upload</button>
+        </div>
+        <div class="form-text">PNG or JPEG, max 2 MB.</div>
+      </form>
+      <% } %>
+    </div>
+
+    <!-- Read-only info card -->
+    <div class="card border-0 shadow-sm p-3 small">
+      <div class="fw-semibold mb-2" style="font-size:.7rem;letter-spacing:.1em;" class="text-uppercase text-muted">Account Info</div>
+      <%
+        const _infoRows = [
+          ['bi-person',       'Username',   dbUser ? dbUser.username : '—'],
+          ['bi-shield-fill',  'Role',       role],
+        ];
+        if (emp) {
+          _infoRows.push(
+            ['bi-building',   'Department', emp.department  ? emp.department.department_name   : '—'],
+            ['bi-people',     'Team',       emp.team        ? emp.team.team_name               : '—'],
+            ['bi-briefcase',  'Position',   emp.position    ? emp.position.position_name       : '—'],
+            ['bi-person-check','Supervisor',emp.supervisor  ? emp.supervisor.first_name + ' ' + emp.supervisor.last_name : '—'],
+            ['bi-calendar',   'Hire Date',  emp.hire_date   ? new Date(emp.hire_date + 'T00:00:00').toLocaleDateString() : '—'],
+            ['bi-tag',        'Emp. Type',  emp.employment_type || '—'],
+          );
+        }
+      %>
+      <% _infoRows.forEach(([icon, label, value]) => { %>
+        <div class="d-flex align-items-start gap-2 py-2 border-bottom">
+          <i class="bi <%= icon %> text-muted mt-1 flex-shrink-0" style="width:16px;"></i>
+          <div style="min-width:0;">
+            <div class="text-muted" style="font-size:.7rem;"><%= label %></div>
+            <div class="fw-semibold text-truncate"><%= value %></div>
+          </div>
+        </div>
+      <% }) %>
+      <p class="text-muted mt-2 mb-0" style="font-size:.7rem;">
+        Contact your Administrator to change username, role, department or status.
+      </p>
+    </div>
+
+  </div><!-- /col-lg-4 -->
+
+  <!-- ── Right column: edit forms ──────────────────────────────────────────── -->
+  <div class="col-lg-8">
+
+    <!-- ── Personal Information form (only when employee row exists) ───────── -->
+    <% if (emp) { %>
+    <div class="card border-0 shadow-sm p-4 mb-4">
+      <h6 class="text-uppercase text-muted fw-semibold mb-3"
+          style="font-size:.7rem;letter-spacing:.1em;">Personal Information</h6>
+
+      <% if (locals.infoError) { %>
+        <div class="alert alert-danger d-flex align-items-center gap-2 py-2 small mb-3">
+          <i class="bi bi-exclamation-circle-fill"></i> <%= locals.infoError %>
+        </div>
+      <% } %>
+
+      <%
+        const fv = formValues || {};
+        // Use formValues on re-render after error, otherwise live data
+        const _fn  = fv.first_name  !== undefined ? fv.first_name  : emp.first_name;
+        const _ln  = fv.last_name   !== undefined ? fv.last_name   : emp.last_name;
+        const _em  = fv.email       !== undefined ? fv.email       : emp.email;
+        const _ph  = fv.phone       !== undefined ? fv.phone       : (emp.phone || '');
+        const _ec  = fv.emergency_contact !== undefined ? fv.emergency_contact : (emp.emergency_contact || '');
+      %>
+
+      <form method="POST" action="<%= basePath %>/profile">
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">First Name <span class="text-danger">*</span></label>
+            <input name="first_name" class="form-control" required value="<%= _fn %>" />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">Last Name <span class="text-danger">*</span></label>
+            <input name="last_name" class="form-control" required value="<%= _ln %>" />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">Email <span class="text-danger">*</span></label>
+            <input type="email" name="email" class="form-control" required value="<%= _em %>" />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">Phone</label>
+            <input name="phone" class="form-control" value="<%= _ph %>" />
+          </div>
+          <div class="col-12">
+            <label class="form-label small fw-semibold">Emergency Contact</label>
+            <input name="emergency_contact" class="form-control" value="<%= _ec %>" />
+          </div>
+        </div>
+        <div class="d-flex justify-content-end">
+          <button type="submit" class="btn btn-primary">
+            <i class="bi bi-floppy me-1"></i>Save Changes
+          </button>
+        </div>
+      </form>
+    </div>
+    <% } %><!-- /if emp -->
+
+    <!-- ── Change Password form ────────────────────────────────────────────── -->
+    <div class="card border-0 shadow-sm p-4">
+      <h6 class="text-uppercase text-muted fw-semibold mb-3"
+          style="font-size:.7rem;letter-spacing:.1em;">Change Password</h6>
+
+      <% if (locals.pwError) { %>
+        <div class="alert alert-danger d-flex align-items-center gap-2 py-2 small mb-3">
+          <i class="bi bi-exclamation-circle-fill"></i> <%= locals.pwError %>
+        </div>
+      <% } %>
+
+      <form method="POST" action="<%= basePath %>/profile/password"
+            autocomplete="off" id="pwForm">
+        <div class="row g-3 mb-3">
+          <div class="col-12">
+            <label class="form-label small fw-semibold">Current Password <span class="text-danger">*</span></label>
+            <div class="input-group">
+              <input type="password" name="current_password" id="currentPw"
+                     class="form-control" required autocomplete="current-password"
+                     data-pw-field />
+              <button type="button" class="btn btn-outline-secondary"
+                      data-pw-toggle="currentPw" title="Show / hide"
+                      aria-label="Toggle current password visibility">
+                <i class="bi bi-eye"></i>
+              </button>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">New Password <span class="text-danger">*</span></label>
+            <div class="input-group">
+              <input type="password" name="new_password" id="newPw"
+                     class="form-control" required minlength="8"
+                     autocomplete="new-password" data-pw-field />
+              <button type="button" class="btn btn-outline-secondary"
+                      data-pw-toggle="newPw" title="Show / hide"
+                      aria-label="Toggle new password visibility">
+                <i class="bi bi-eye"></i>
+              </button>
+            </div>
+            <div class="form-text">Minimum 8 characters.</div>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small fw-semibold">Confirm New Password <span class="text-danger">*</span></label>
+            <div class="input-group">
+              <input type="password" name="confirm_password" id="confirmPw"
+                     class="form-control" required minlength="8"
+                     autocomplete="new-password" data-pw-field />
+              <button type="button" class="btn btn-outline-secondary"
+                      data-pw-toggle="confirmPw" title="Show / hide"
+                      aria-label="Toggle confirm password visibility">
+                <i class="bi bi-eye"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="d-flex justify-content-end">
+          <button type="submit" class="btn btn-warning">
+            <i class="bi bi-key me-1"></i>Change Password
+          </button>
+        </div>
+      </form>
+    </div><!-- /change password card -->
+
+  </div><!-- /col-lg-8 -->
+</div><!-- /row -->
+
+<%- include('../partials/layout_end') %>
+<%# profile.js: show/hide toggles for password fields. External file — no inline JS (CSP). %>
+<script src="/js/profile.js"></script>

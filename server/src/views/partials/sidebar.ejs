@@ -45,6 +45,8 @@
       <%- include('_nav_item', { href: '/admin/reports',       icon: 'bi-bar-chart-fill',      label: 'Reports',       badge: 0,       cur: _cur }) %>
       <%- include('_nav_item', { href: '/admin/activity-logs', icon: 'bi-journal-text',        label: 'Audit Log',     badge: 0,       cur: _cur }) %>
       <%- include('_nav_item', { href: '/admin/notifications', icon: 'bi-bell-fill',           label: 'Notifications', badge: _unread, cur: _cur }) %>
+      <%- include('_nav_section', { label: 'Account' }) %>
+      <%- include('_nav_item', { href: '/admin/profile',       icon: 'bi-person-circle',       label: 'My Profile',    badge: 0,       cur: _cur }) %>
     <% } %>
 
     <% if (_role === 'Manager') { %>
@@ -58,6 +60,8 @@
       <%- include('_nav_section', { label: 'Insights' }) %>
       <%- include('_nav_item', { href: '/manager/reports',        icon: 'bi-bar-chart-fill',      label: 'Reports',       badge: 0,       cur: _cur }) %>
       <%- include('_nav_item', { href: '/manager/notifications',  icon: 'bi-bell-fill',           label: 'Notifications', badge: _unread, cur: _cur }) %>
+      <%- include('_nav_section', { label: 'Account' }) %>
+      <%- include('_nav_item', { href: '/manager/profile',        icon: 'bi-person-circle',       label: 'My Profile',    badge: 0,       cur: _cur }) %>
     <% } %>
 
     <% if (_role === 'Employee') { %>
@@ -68,6 +72,8 @@
       <%- include('_nav_item', { href: '/employee/attendance',    icon: 'bi-calendar-check-fill', label: 'Attendance',    badge: 0,       cur: _cur }) %>
       <%- include('_nav_item', { href: '/employee/files',         icon: 'bi-folder2-open',        label: 'Files',         badge: 0,       cur: _cur }) %>
       <%- include('_nav_item', { href: '/employee/notifications', icon: 'bi-bell-fill',           label: 'Notifications', badge: _unread, cur: _cur }) %>
+      <%- include('_nav_section', { label: 'Account' }) %>
+      <%- include('_nav_item', { href: '/employee/profile',       icon: 'bi-person-circle',       label: 'My Profile',    badge: 0,       cur: _cur }) %>
     <% } %>
 
   </div>

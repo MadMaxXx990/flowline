@@ -19,6 +19,13 @@ const logC   = require('../controllers/activityLogController');
 router.use(authenticate, authorize('Administrator'));
 router.use(require('../middleware/unreadCount'));
 
+// ── Profile ───────────────────────────────────────────────────────────────────
+const profC = require('../controllers/profileController');
+router.get('/profile',          profC.show);
+router.post('/profile',         profC.update);
+router.post('/profile/password', profC.changePassword);
+router.post('/profile/photo',   upload.single('profile_photo'), profC.uploadPhoto);
+
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 router.get('/dashboard', dashC.admin);
 

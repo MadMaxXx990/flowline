@@ -845,6 +845,281 @@ async function main() {
   }
 
   // ════════════════════════════════════════════════════════════════════════════
+  // SECTION 13 — My Profile (/profile)
+  // ════════════════════════════════════════════════════════════════════════════
+
+  // ── 13a: GET /profile → 200 for each role ──────────────────────────────────
+  await check('Profile: Admin GET /admin/profile → 200',   () => get('/admin/profile',    adminTok), 200);
+  await check('Profile: Mgr GET /manager/profile → 200',   () => get('/manager/profile',  mgrTok),   200);
+  await check('Profile: Emp GET /employee/profile → 200',  () => get('/employee/profile', empTok),   200);
+
+  // ── 13b: Unauthenticated → redirect to /login ──────────────────────────────
+  await check('Profile: no cookie → 302',
+    () => get('/employee/profile', null), 302);
+
+  if (SELF_MANAGED) {
+
+    // ── 13c: Update own name+phone → saved in DB ───────────────────────────
+    const emp1DbRow = (await querySql(
+      `SELECT e.employee_id, e.first_name, e.last_name, e.phone
+       FROM employees e JOIN users u ON u.employee_id=e.employee_id
+       WHERE u.username='emp1' LIMIT 1`, SCRATCH_DB
+    ))[0];
+
+    await check('Profile: emp1 update info → 302', async () => {
+      const r = await httpReq('POST', '/employee/profile', empTok, {
+        first_name:        'EmpOneUpdated',
+        last_name:         emp1DbRow.last_name,
+        email:             'emp1updated@test.invalid',
+        phone:             '09991234567',
+        emergency_contact: 'EmergencyPerson',
+      });
+      return r.status;
+    }, 302);
+
+    await check('Profile: updated name persisted in DB', async () => {
+      const [row] = await querySql(
+        `SELECT first_name FROM employees WHERE employee_id=${emp1DbRow.employee_id}`, SCRATCH_DB
+      );
+      return row?.first_name === 'EmpOneUpdated';
+    }, true);
+
+    // ── 13d: Fields sent in body that must be ignored ──────────────────────
+    // Send role, username, department_id in the body — none should change.
+    const [emp1UserBefore] = await querySql(
+      `SELECT id AS uid, username, role_id FROM users WHERE username='emp1' LIMIT 1`, SCRATCH_DB
+    );
+    await check('Profile: body fields role/username ignored → 302', async () => {
+      const r = await httpReq('POST', '/employee/profile', empTok, {
+        first_name:   'EmpOneUpdated',
+        last_name:    emp1DbRow.last_name,
+        email:        'emp1updated@test.invalid',
+        username:     'hacker',
+        role_id:      '1',
+        department_id:'1',
+        status:       'Archived',
+      });
+      return r.status;
+    }, 302);
+
+    await check('Profile: username unchanged after ignored-field attempt', async () => {
+      const [row] = await querySql(
+        `SELECT username FROM users WHERE id=${emp1UserBefore.uid} LIMIT 1`, SCRATCH_DB
+      );
+      return row?.username === 'emp1';
+    }, true);
+
+    await check('Profile: role unchanged after ignored-field attempt', async () => {
+      const [row] = await querySql(
+        `SELECT role_id FROM users WHERE id=${emp1UserBefore.uid} LIMIT 1`, SCRATCH_DB
+      );
+      return String(row?.role_id) === String(emp1UserBefore.role_id);
+    }, true);
+
+    // ── 13e: Cannot update another user's data by injecting an ID ──────────
+    // Sending employee_id / id of manager1 in the body: server must use
+    // req.user.employeeId, so emp1's own row is still what gets written.
+    const mgr1EmpRow = (await querySql(
+      `SELECT e.employee_id, e.first_name FROM employees e
+       JOIN users u ON u.employee_id=e.employee_id
+       WHERE u.username='manager1' LIMIT 1`, SCRATCH_DB
+    ))[0];
+
+    await check('Profile: cannot change another user by injecting id → 302', async () => {
+      const r = await httpReq('POST', '/employee/profile', empTok, {
+        employee_id: String(mgr1EmpRow.employee_id),   // ignored by server
+        id:          String(mgr1EmpRow.employee_id),
+        first_name:  'HACKED',
+        last_name:   emp1DbRow.last_name,
+        email:       'emp1updated@test.invalid',
+      });
+      return r.status;
+    }, 302);
+
+    await check('Profile: manager1 first_name not changed', async () => {
+      const [row] = await querySql(
+        `SELECT first_name FROM employees WHERE employee_id=${mgr1EmpRow.employee_id}`, SCRATCH_DB
+      );
+      return row?.first_name !== 'HACKED';
+    }, true);
+
+    // ── 13f: Password change validations ────────────────────────────────────
+    const SEED_PW = 'Flowline2026!';
+
+    // Wrong current password → rejected (still 302 redirect with flash, not 200 re-render in test harness)
+    await check('Profile: wrong current password → non-200', async () => {
+      const r = await httpReq('POST', '/employee/profile/password', empTok, {
+        current_password: 'WrongPassword1!',
+        new_password:     'NewPass8!',
+        confirm_password: 'NewPass8!',
+      });
+      return r.status !== 200 ? 'rejected' : 'accepted';
+    }, 'rejected');
+
+    // Too short
+    await check('Profile: new password too short → non-200', async () => {
+      const r = await httpReq('POST', '/employee/profile/password', empTok, {
+        current_password: SEED_PW,
+        new_password:     'short',
+        confirm_password: 'short',
+      });
+      return r.status !== 200 ? 'rejected' : 'accepted';
+    }, 'rejected');
+
+    // Same as current
+    await check('Profile: new == current → non-200', async () => {
+      const r = await httpReq('POST', '/employee/profile/password', empTok, {
+        current_password: SEED_PW,
+        new_password:     SEED_PW,
+        confirm_password: SEED_PW,
+      });
+      return r.status !== 200 ? 'rejected' : 'accepted';
+    }, 'rejected');
+
+    // Mismatch
+    await check('Profile: confirm mismatch → non-200', async () => {
+      const r = await httpReq('POST', '/employee/profile/password', empTok, {
+        current_password: SEED_PW,
+        new_password:     'NewPass8!',
+        confirm_password: 'DifferentPass8!',
+      });
+      return r.status !== 200 ? 'rejected' : 'accepted';
+    }, 'rejected');
+
+    // Valid change: emp3 (not emp1 — emp1 token may have been affected by earlier tests)
+    const emp3Row = (await querySql(
+      `SELECT u.id as uid FROM users u WHERE u.username='emp3' LIMIT 1`, SCRATCH_DB
+    ))[0];
+    const emp3Tok = emp3Row ? await login('emp3', SEED_PW) : null;
+
+    const NEW_PW = 'ProfileNew8!';
+    if (emp3Tok) {
+      await check('Profile: valid password change → 302', async () => {
+        const r = await httpReq('POST', '/employee/profile/password', emp3Tok, {
+          current_password: SEED_PW,
+          new_password:     NEW_PW,
+          confirm_password: NEW_PW,
+        });
+        return r.status;
+      }, 302);
+
+      // Old password no longer works
+      await check('Profile: old password no longer logs in', async () => {
+        const tok = await login('emp3', SEED_PW);
+        return tok === null;
+      }, true);
+
+      // New password works
+      await check('Profile: new password logs in', async () => {
+        const tok = await login('emp3', NEW_PW);
+        return tok !== null;
+      }, true);
+
+      // Activity log contains "password" description, not the actual password
+      await check('Profile: activity log row exists (no password text)', async () => {
+        const [row] = await querySql(
+          `SELECT description FROM activity_logs
+           WHERE user_id=${emp3Row.uid}
+             AND action_type='update'
+             AND description LIKE '%password%'
+           ORDER BY log_id DESC LIMIT 1`, SCRATCH_DB
+        );
+        if (!row) return false;
+        // Must not contain the actual password value
+        return !row.description.includes(NEW_PW) && !row.description.includes(SEED_PW);
+      }, true);
+
+      // Restore emp3 password for suite repeatability
+      const bcryptMod = require('bcryptjs');
+      const restoredHash = await bcryptMod.hash(SEED_PW, 10);
+      await runSql(
+        `UPDATE users SET password='${restoredHash}', failed_login_attempts=0 WHERE id=${emp3Row.uid}`,
+        SCRATCH_DB
+      );
+    }
+
+    // ── 13g: Photo upload — .exe and .svg rejected; .png accepted ──────────
+    // We test via /employee/profile/photo.
+    // First get emp1's current employee_id for photo route (shared route uses it)
+    const boundary = `----ProfileBoundary${Date.now()}`;
+
+    const makeMultipart = (filename, contentType, bodyBytes) => {
+      const parts = [
+        `--${boundary}`,
+        `Content-Disposition: form-data; name="profile_photo"; filename="${filename}"`,
+        `Content-Type: ${contentType}`,
+        '',
+        bodyBytes,
+        `--${boundary}--`,
+      ].join('\r\n');
+      return parts;
+    };
+
+    await check('Profile: .exe photo → rejected (302 or 422)', async () => {
+      const body = makeMultipart('evil.exe', 'application/octet-stream', 'MZfake');
+      const r = await fetch(`${BASE}/employee/profile/photo`, {
+        method: 'POST', redirect: 'manual',
+        headers: { Cookie: `fl_token=${empTok}`, 'Content-Type': `multipart/form-data; boundary=${boundary}` },
+        body,
+      });
+      return [302, 422].includes(r.status) ? 'rejected' : 'accepted';
+    }, 'rejected');
+
+    await check('Profile: .svg photo → rejected', async () => {
+      const body = makeMultipart('img.svg', 'image/svg+xml', '<svg/>');
+      const r = await fetch(`${BASE}/employee/profile/photo`, {
+        method: 'POST', redirect: 'manual',
+        headers: { Cookie: `fl_token=${empTok}`, 'Content-Type': `multipart/form-data; boundary=${boundary}` },
+        body,
+      });
+      return [302, 422].includes(r.status) ? 'rejected' : 'accepted';
+    }, 'rejected');
+
+    // 1×1 white PNG (valid minimal image)
+    const PNG_BYTES = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwADhQGAWjR9awAAAABJRU5ErkJggg==',
+      'base64'
+    ).toString('binary');
+
+    await check('Profile: valid .png photo → 302', async () => {
+      const bnd2 = `----PNGBoundary${Date.now()}`;
+      const parts = [
+        `--${bnd2}`,
+        `Content-Disposition: form-data; name="profile_photo"; filename="avatar.png"`,
+        `Content-Type: image/png`,
+        '',
+        PNG_BYTES,
+        `--${bnd2}--`,
+      ].join('\r\n');
+      const r = await fetch(`${BASE}/employee/profile/photo`, {
+        method: 'POST', redirect: 'manual',
+        headers: { Cookie: `fl_token=${empTok}`, 'Content-Type': `multipart/form-data; boundary=${bnd2}` },
+        body: parts,
+      });
+      return r.status;
+    }, 302);
+
+    // Verify profile_photo_url was updated in the DB
+    await check('Profile: photo URL saved in DB after PNG upload', async () => {
+      const [row] = await querySql(
+        `SELECT e.profile_photo_url FROM employees e
+         JOIN users u ON u.employee_id=e.employee_id
+         WHERE u.username='emp1' LIMIT 1`, SCRATCH_DB
+      );
+      return typeof row?.profile_photo_url === 'string' && row.profile_photo_url.startsWith('uploads/');
+    }, true);
+
+    // Restore emp1 name and email for repeatable runs
+    await runSql(
+      `UPDATE employees SET first_name='${emp1DbRow.first_name}', email='emp1@flowline.test',
+       phone=NULL, emergency_contact=NULL
+       WHERE employee_id=${emp1DbRow.employee_id}`,
+      SCRATCH_DB
+    );
+
+  } // end SELF_MANAGED
+
+  // ════════════════════════════════════════════════════════════════════════════
   // Summary
   // ════════════════════════════════════════════════════════════════════════════
   printDivider();

@@ -11,6 +11,14 @@ const attnC  = require('../controllers/attendanceController');
 router.use(authenticate, authorize('Employee'));
 router.use(require('../middleware/unreadCount'));
 
+// ── Profile ───────────────────────────────────────────────────────────────────
+const profC  = require('../controllers/profileController');
+const upload = require('../middleware/upload');
+router.get('/profile',           profC.show);
+router.post('/profile',          profC.update);
+router.post('/profile/password', profC.changePassword);
+router.post('/profile/photo',    upload.single('profile_photo'), profC.uploadPhoto);
+
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 router.get('/dashboard', dashC.employee);
 
