@@ -82,7 +82,10 @@
               </a>
               <form method="POST" action="/admin/employees/<%= emp.employee_id %>?_method=DELETE"
                     class="d-inline"
-                    data-confirm="Archive <%= emp.first_name %> <%= emp.last_name %>? Their account will be deactivated but all historical records are preserved.">
+                    data-confirm-title="Remove <%= emp.first_name %> <%= emp.last_name %>?"
+                    data-confirm-message="This archives the employee and removes access. This action cannot be undone from the list."
+                    data-confirm-ok="Remove"
+                    data-confirm-variant="danger">
                 <button type="submit" class="btn btn-sm btn-outline-warning py-0 px-2" title="Archive">
                   <i class="bi bi-archive"></i>
                 </button>

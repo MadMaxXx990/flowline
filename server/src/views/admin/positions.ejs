@@ -48,7 +48,10 @@
                   <i class="bi bi-pencil"></i>
                 </button>
                 <form method="POST" action="/admin/positions/<%= p.position_id %>?_method=DELETE" class="d-inline"
-                      data-confirm="Remove position &quot;<%= p.position_name %>&quot;?">
+                      data-confirm-title="Remove position?"
+                      data-confirm-message="Remove &quot;<%= p.position_name %>&quot;?"
+                      data-confirm-ok="Remove"
+                      data-confirm-variant="danger">
                   <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2">
                     <i class="bi bi-trash"></i>
                   </button>

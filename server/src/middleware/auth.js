@@ -48,7 +48,7 @@ const authenticate = async (req, res, next) => {
     where: { id: payload.id },
     include: [
       { model: Role,     as: 'role' },
-      { model: Employee, as: 'employee', attributes: ['first_name', 'last_name'] },
+      { model: Employee, as: 'employee', attributes: ['first_name', 'last_name', 'employee_id', 'profile_photo_url'] },
     ],
   });
 
@@ -70,6 +70,11 @@ const authenticate = async (req, res, next) => {
   res.locals.displayName = (empRecord && empRecord.first_name)
     ? `${empRecord.first_name} ${empRecord.last_name}`.trim()
     : user.username;
+
+  // Expose the employee's profile photo URL so the sidebar can show it.
+  // Null when no employee row or no photo uploaded yet.
+  res.locals.profilePhotoEmployeeId = empRecord ? empRecord.employee_id : null;
+  res.locals.profilePhotoUrl = (empRecord && empRecord.profile_photo_url) ? empRecord.profile_photo_url : null;
 
   next();
 };

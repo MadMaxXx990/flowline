@@ -46,7 +46,10 @@
             <i class="bi bi-pencil"></i>
           </a>
           <form method="POST" action="<%= basePath %>/tasks/<%= task.task_id %>?_method=DELETE"
-                data-confirm="Delete this task? This cannot be undone.">
+                data-confirm-title="Delete this task?"
+                data-confirm-message="This cannot be undone."
+                data-confirm-ok="Delete"
+                data-confirm-variant="danger">
             <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
           </form>
         </div>
@@ -164,7 +167,10 @@
       <p class="fw-semibold small mb-2">Ready to submit?</p>
       <p class="text-muted small mb-3">Submit this task for your manager to review and approve.</p>
       <form method="POST" action="/employee/tasks/<%= task.task_id %>/submit"
-            data-confirm="Submit this task for manager review?">
+            data-confirm-title="Submit for review?"
+            data-confirm-message="Submit this task for your manager to review and approve."
+            data-confirm-ok="Submit"
+            data-confirm-variant="primary">
         <button type="submit" class="btn btn-warning w-100">
           <i class="bi bi-send me-1"></i>Submit for Review
         </button>
@@ -215,7 +221,10 @@
                 <% if (canManage) { %>
                 <form method="POST"
                       action="<%= basePath %>/tasks/<%= task.task_id %>/comments/<%= c.comment_id %>?_method=DELETE"
-                      data-confirm="Remove this comment?">
+                      data-confirm-title="Remove comment?"
+                      data-confirm-message="This comment will be permanently removed."
+                      data-confirm-ok="Remove"
+                      data-confirm-variant="danger">
                   <button type="submit" class="btn btn-sm p-0 border-0 bg-transparent text-danger">
                     <i class="bi bi-x fs-6"></i>
                   </button>

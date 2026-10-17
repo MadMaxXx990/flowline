@@ -14,7 +14,13 @@
   </div>
 <% } %>
 
-<form method="POST" action="<%= actionUrl %>" enctype="multipart/form-data" id="task-form">
+<form method="POST" action="<%= actionUrl %>" enctype="multipart/form-data" id="task-form"
+      <% if (!locals.isEdit) { %>
+        data-confirm-title="Create this task?"
+        data-confirm-message="Assigned employees will be notified."
+        data-confirm-ok="Create task"
+        data-confirm-variant="primary"
+      <% } %>>
   <% if (locals.isEdit) { %>
     <input type="hidden" name="_method" value="PUT" />
   <% } %>

@@ -50,7 +50,10 @@
                 </button>
                 <!-- Delete -->
                 <form method="POST" action="/admin/departments/<%= d.department_id %>?_method=DELETE" class="d-inline"
-                      data-confirm="Remove department &quot;<%= d.department_name %>&quot;? This cannot be undone.">
+                      data-confirm-title="Remove department?"
+                      data-confirm-message="Remove &quot;<%= d.department_name %>&quot;? This cannot be undone."
+                      data-confirm-ok="Remove"
+                      data-confirm-variant="danger">
                   <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2">
                     <i class="bi bi-trash"></i>
                   </button>

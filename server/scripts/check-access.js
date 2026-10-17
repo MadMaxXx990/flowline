@@ -93,8 +93,8 @@ async function startServer(dbUrl, port) {
 
     serverProc.stdout.setEncoding('utf8');
     serverProc.stderr.setEncoding('utf8');
-    serverProc.stdout.on('data', d => { if (d.includes('All 18 models OK') || d.includes('Flowline API running')) markReady(); });
-    serverProc.stderr.on('data', d => { if (d.includes('All 18 models OK') || d.includes('Flowline API running')) markReady(); });
+    serverProc.stdout.on('data', d => { if (d.includes('models OK') || d.includes('Flowline API running')) markReady(); });
+    serverProc.stderr.on('data', d => { if (d.includes('models OK') || d.includes('Flowline API running')) markReady(); });
     serverProc.on('error', reject);
     serverProc.on('exit', (code) => { if (!ready) reject(new Error(`Server exited early with code ${code}`)); });
 
@@ -1118,6 +1118,121 @@ async function main() {
     );
 
   } // end SELF_MANAGED
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // SECTION 14 — Profile in user card, confirm modal, logout flow
+  // ════════════════════════════════════════════════════════════════════════════
+
+  // Helper: fetch a full page HTML and return it as text
+  async function getHtml(path, tok) {
+    const r = await httpReq('GET', path, tok);
+    return r.status === 200 ? await r.text() : '';
+  }
+
+  // ── 14a: Profile link in user card, NOT in separate ACCOUNT section ─────────
+  for (const [roleLabel, tok, dashPath] of [
+    ['admin',   adminTok, '/admin/dashboard'],
+    ['manager', mgrTok,   '/manager/dashboard'],
+    ['emp',     empTok,   '/employee/dashboard'],
+  ]) {
+    const html = await getHtml(dashPath, tok);
+
+    await check(`Profile card link present (${roleLabel})`, async () => {
+      const profilePath = dashPath.replace('/dashboard', '/profile');
+      return html.includes(`href="${profilePath}"`) && html.includes('data-sidebar-profile-link');
+    }, true);
+
+    await check(`No standalone ACCOUNT section in nav (${roleLabel})`, async () => {
+      // The old <span> text "ACCOUNT" in a nav section label must be gone
+      // We look for the pattern that the _nav_section partial produces
+      return !html.includes('>ACCOUNT<');
+    }, true);
+  }
+
+  // ── 14b: Logout POST still works → 302, cookie cleared ───────────────────
+  for (const [roleLabel, tok, dashPath] of [
+    ['admin',   adminTok, '/admin/dashboard'],
+    ['manager', mgrTok,   '/manager/dashboard'],
+    ['emp',     empTok,   '/employee/dashboard'],
+  ]) {
+    await check(`Logout POST works (${roleLabel}) → 302`, async () => {
+      // We use a fresh token so we don't invalidate the main test tokens
+      const freshTok = await login(
+        roleLabel === 'admin'   ? A_USER :
+        roleLabel === 'manager' ? M_USER : E_USER,
+        roleLabel === 'admin'   ? A_PASS :
+        roleLabel === 'manager' ? M_PASS : E_PASS,
+      );
+      if (!freshTok) return 'no-token';
+      const r = await httpReq('POST', '/logout', freshTok);
+      return r.status;
+    }, 302);
+  }
+
+  // ── 14c: Rendered pages carry correct data-confirm-* attributes ─────────────
+  if (SELF_MANAGED) {
+
+    // Logout form on any dashboard
+    await check('Logout form has data-confirm-title', async () => {
+      const html = await getHtml('/admin/dashboard', adminTok);
+      return html.includes('data-confirm-title="Log out?"');
+    }, true);
+
+    // Create-task page (manager)
+    await check('Create-task form has data-confirm-title', async () => {
+      const html = await getHtml('/manager/tasks/new', mgrTok);
+      return html.includes('data-confirm-title="Create this task?"');
+    }, true);
+
+    // Employee list — archive form carries title + message
+    await check('Archive-employee form has data-confirm-title', async () => {
+      const html = await getHtml('/admin/employees', adminTok);
+      return html.includes('data-confirm-title=') && html.includes('data-confirm-message=');
+    }, true);
+
+    // The shared modal exists exactly once in a rendered page
+    await check('Shared confirm modal exists in page HTML', async () => {
+      const html = await getHtml('/admin/dashboard', adminTok);
+      const count = (html.match(/id="confirmModal"/g) || []).length;
+      return count === 1;
+    }, true);
+
+    // ── 14d: Existing create-task and archive-employee POST tests ────────────
+    // (reuse infrastructure already in the suite — just confirm they still pass)
+    await check('Create task still works (302) via POST', async () => {
+      const due = new Date(); due.setDate(due.getDate() + 20);
+      const dueStr = `${due.getFullYear()}-${String(due.getMonth()+1).padStart(2,'0')}-${String(due.getDate()).padStart(2,'0')}`;
+      const [anyPrio] = await querySql('SELECT priority_id FROM task_priorities ORDER BY priority_id LIMIT 1', SCRATCH_DB);
+      const r = await httpReq('POST', '/manager/tasks', mgrTok, {
+        task_title:  'Section14 confirm test task',
+        priority_id: String(anyPrio?.priority_id || 1),
+        due_date:    dueStr,
+      });
+      return r.status;
+    }, 302);
+
+    await check('Archive employee still works (302) via POST', async () => {
+      // Create a disposable employee then archive it
+      const [anyRole]     = await querySql('SELECT role_id FROM roles ORDER BY role_id LIMIT 1', SCRATCH_DB);
+      const [anyPosition] = await querySql('SELECT position_id FROM positions ORDER BY position_id LIMIT 1', SCRATCH_DB);
+      // Create
+      const cr = await httpReq('POST', '/admin/employees', adminTok, {
+        first_name:  'Disposable', last_name: 'Sec14',
+        email:       'disposable.sec14@test.invalid',
+        username:    'disposable.sec14.user', password: 'TestPass8!',
+        role_id:     String(anyRole?.role_id || 1),
+        position_id: String(anyPosition?.position_id || 1),
+      });
+      if (cr.status !== 302) return `create-failed:${cr.status}`;
+      const [emp] = await querySql(
+        `SELECT employee_id FROM employees WHERE email='disposable.sec14@test.invalid' LIMIT 1`, SCRATCH_DB
+      );
+      if (!emp) return 'not-found';
+      // Archive
+      const dr = await httpReq('POST', `/admin/employees/${emp.employee_id}?_method=DELETE`, adminTok, {});
+      return dr.status;
+    }, 302);
+  }
 
   // ════════════════════════════════════════════════════════════════════════════
   // Summary

@@ -151,7 +151,11 @@
               </button>
               <% if (role === 'Administrator') { %>
               <form method="POST" action="/admin/attendance/<%= rec.attendance_id %>?_method=DELETE"
-                    class="d-inline" data-confirm="Delete this attendance record?">
+                    class="d-inline"
+                    data-confirm-title="Delete attendance record?"
+                    data-confirm-message="This permanently removes this attendance entry."
+                    data-confirm-ok="Delete"
+                    data-confirm-variant="danger">
                 <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-2">
                   <i class="bi bi-trash"></i>
                 </button>

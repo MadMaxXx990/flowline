@@ -1,9 +1,12 @@
 <%
   /* Passed in from every page render:
-       role     — 'Administrator' | 'Manager' | 'Employee'
-       basePath — '/admin' | '/manager' | '/employee'
-       user     — req.user JWT payload { id, role, employeeId }
-       unreadCount — integer (live count from unreadCount middleware)
+       role          — 'Administrator' | 'Manager' | 'Employee'
+       basePath      — '/admin' | '/manager' | '/employee'
+       user          — req.user { id, role, employeeId }
+       unreadCount   — integer (live count from unreadCount middleware)
+       displayName   — set by authenticate
+       profilePhotoUrl        — set by authenticate (null or relative path)
+       profilePhotoEmployeeId — set by authenticate (null or integer)
   */
   const _unread   = locals.unreadCount || 0;
   const _initial  = (locals.displayName || locals.user && locals.user.username || '?')[0].toUpperCase();
@@ -11,10 +14,12 @@
   const _role     = locals.role || '';
   const _base     = locals.basePath || '';
   const _cur      = locals.currentPath || '';
+  const _profPath = _base + '/profile';
+  const _onProfile = (_cur === _profPath);
 
-  function navCls(path) {
-    return _cur === path ? 'active' : '';
-  }
+  // Profile photo: served from the shared /employees/:id/photo route
+  const _photoId  = locals.profilePhotoEmployeeId;
+  const _hasPhoto = !!locals.profilePhotoUrl && !!_photoId;
 %>
 <nav id="sidebar" style="position:fixed;top:0;left:0;width:250px;height:100vh;background:#1e1b4b;display:flex;flex-direction:column;z-index:1040;">
 
@@ -45,8 +50,6 @@
       <%- include('_nav_item', { href: '/admin/reports',       icon: 'bi-bar-chart-fill',      label: 'Reports',       badge: 0,       cur: _cur }) %>
       <%- include('_nav_item', { href: '/admin/activity-logs', icon: 'bi-journal-text',        label: 'Audit Log',     badge: 0,       cur: _cur }) %>
       <%- include('_nav_item', { href: '/admin/notifications', icon: 'bi-bell-fill',           label: 'Notifications', badge: _unread, cur: _cur }) %>
-      <%- include('_nav_section', { label: 'Account' }) %>
-      <%- include('_nav_item', { href: '/admin/profile',       icon: 'bi-person-circle',       label: 'My Profile',    badge: 0,       cur: _cur }) %>
     <% } %>
 
     <% if (_role === 'Manager') { %>
@@ -60,8 +63,6 @@
       <%- include('_nav_section', { label: 'Insights' }) %>
       <%- include('_nav_item', { href: '/manager/reports',        icon: 'bi-bar-chart-fill',      label: 'Reports',       badge: 0,       cur: _cur }) %>
       <%- include('_nav_item', { href: '/manager/notifications',  icon: 'bi-bell-fill',           label: 'Notifications', badge: _unread, cur: _cur }) %>
-      <%- include('_nav_section', { label: 'Account' }) %>
-      <%- include('_nav_item', { href: '/manager/profile',        icon: 'bi-person-circle',       label: 'My Profile',    badge: 0,       cur: _cur }) %>
     <% } %>
 
     <% if (_role === 'Employee') { %>
@@ -72,29 +73,68 @@
       <%- include('_nav_item', { href: '/employee/attendance',    icon: 'bi-calendar-check-fill', label: 'Attendance',    badge: 0,       cur: _cur }) %>
       <%- include('_nav_item', { href: '/employee/files',         icon: 'bi-folder2-open',        label: 'Files',         badge: 0,       cur: _cur }) %>
       <%- include('_nav_item', { href: '/employee/notifications', icon: 'bi-bell-fill',           label: 'Notifications', badge: _unread, cur: _cur }) %>
-      <%- include('_nav_section', { label: 'Account' }) %>
-      <%- include('_nav_item', { href: '/employee/profile',       icon: 'bi-person-circle',       label: 'My Profile',    badge: 0,       cur: _cur }) %>
     <% } %>
 
   </div>
 
-  <!-- Footer: avatar + logout -->
-  <div class="p-3 d-flex align-items-center gap-2" style="border-top:1px solid rgba(255,255,255,.08);">
-    <div class="rounded-circle d-flex align-items-center justify-content-center fw-bold text-white flex-shrink-0"
-         style="width:34px;height:34px;background:#4f46e5;font-size:.8rem;">
-      <%= _initial %>
-    </div>
-    <div style="min-width:0;">
-      <div class="text-white fw-semibold text-truncate" style="font-size:.82rem;"><%= _name %></div>
-      <div style="font-size:.7rem;color:rgba(255,255,255,.45);"><%= _role %></div>
-    </div>
-    <!-- Logout: POST form to satisfy POST-only state-change rule -->
-    <form method="POST" action="/logout" class="ms-auto">
-      <button type="submit" class="btn btn-sm p-0 border-0 bg-transparent" title="Logout"
+  <!-- ── User card / logout ─────────────────────────────────────────────────── -->
+  <%
+    // Active style when the user is currently on their profile page
+    const _cardBg     = _onProfile ? 'rgba(255,255,255,.12)' : 'transparent';
+    const _cardBorder = _onProfile ? '3px solid #4f46e5' : '3px solid transparent';
+  %>
+  <div class="d-flex align-items-center gap-2 p-3" style="border-top:1px solid rgba(255,255,255,.08);">
+
+    <%# Profile link wraps avatar + name — entire block is clickable %>
+    <a href="<%= _profPath %>"
+       title="My Profile"
+       aria-label="My Profile"
+       class="d-flex align-items-center gap-2 text-decoration-none flex-grow-1 rounded-2 px-1 py-1"
+       style="min-width:0;background:<%= _cardBg %>;border-left:<%= _cardBorder %>;transition:background .15s;cursor:pointer;"
+       data-sidebar-profile-link>
+
+      <%# Avatar: photo if available, else initial letter %>
+      <% if (_hasPhoto) { %>
+        <img src="/employees/<%= _photoId %>/photo"
+             alt="<%= _name %>"
+             class="rounded-circle flex-shrink-0"
+             style="width:34px;height:34px;object-fit:cover;"
+             onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />
+        <%# Fallback initial shown only if img fails to load %>
+        <div class="rounded-circle d-none align-items-center justify-content-center fw-bold text-white flex-shrink-0"
+             style="width:34px;height:34px;background:#4f46e5;font-size:.8rem;">
+          <%= _initial %>
+        </div>
+      <% } else { %>
+        <div class="rounded-circle d-flex align-items-center justify-content-center fw-bold text-white flex-shrink-0"
+             style="width:34px;height:34px;background:#4f46e5;font-size:.8rem;">
+          <%= _initial %>
+        </div>
+      <% } %>
+
+      <div style="min-width:0;">
+        <div class="text-white fw-semibold text-truncate" style="font-size:.82rem;"><%= _name %></div>
+        <div style="font-size:.7rem;color:rgba(255,255,255,.45);"><%= _role %></div>
+      </div>
+
+    </a>
+
+    <!-- Logout: POST form — separate from the profile link so clicking avatar
+         goes to profile, clicking the icon logs out. -->
+    <form method="POST" action="/logout" class="ms-auto flex-shrink-0"
+          data-confirm-title="Log out?"
+          data-confirm-message="You will need to sign in again."
+          data-confirm-ok="Log out"
+          data-confirm-variant="danger">
+      <button type="submit"
+              class="btn btn-sm p-0 border-0 bg-transparent"
+              title="Logout"
+              aria-label="Logout"
               style="color:rgba(255,255,255,.4);">
         <i class="bi bi-box-arrow-right fs-5"></i>
       </button>
     </form>
+
   </div>
 
 </nav>
