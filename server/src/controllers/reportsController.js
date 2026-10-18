@@ -2,12 +2,14 @@
 const { Op } = require('sequelize');
 const {
   Task, TaskAssignment, TaskPriority, WorkflowStage,
+  TaskStageHistory,
   Employee, Department, Team, Attendance,
 } = require('../models');
 const { localDateStr, startOfLocalDay, endOfLocalDay, parseLocalDate } = require('../lib/dates');
 const {
   completionRate, enrichPerformanceRow, sortPerformanceRows,
   paginate, buildStageCounts, buildPriorityCounts,
+  buildCompletionStats,
 } = require('../lib/reportMetrics');
 const { buildExcel, buildPdf } = require('../lib/reportExports');
 
@@ -19,6 +21,38 @@ function safe(v) {
   if (v === null || v === undefined) return '';
   const s = String(v);
   return FORMULA_START.test(s) ? "'" + s : s;
+}
+
+// ── Fetch completion records for a set of task IDs ───────────────────────────
+/**
+ * For each task_id in `taskIds`, find the LATEST task_stage_history row
+ * where new_stage_id = completedId (handles re-approved tasks correctly —
+ * only the final Completed transition is used).
+ *
+ * Returns a Map<taskId, Date> of completedAt timestamps.
+ */
+async function fetchCompletionTimestamps(taskIds, completedId) {
+  if (!taskIds.length) return new Map();
+
+  // One query: get all Completed-transition rows for the given tasks,
+  // then keep only the latest per task in JS.
+  const rows = await TaskStageHistory.findAll({
+    where: {
+      task_id:     { [Op.in]: taskIds },
+      new_stage_id: completedId,
+    },
+    attributes: ['task_id', 'changed_at'],
+    raw: true,
+  });
+
+  // Keep the latest changed_at per task (in case a task was approved multiple times)
+  const map = new Map();
+  for (const row of rows) {
+    const existing = map.get(row.task_id);
+    const ts = new Date(row.changed_at);
+    if (!existing || ts > existing) map.set(row.task_id, ts);
+  }
+  return map;
 }
 
 // ── Shared data-gathering function ───────────────────────────────────────────
@@ -50,7 +84,7 @@ async function buildReportData(req) {
     Task.count({ where: { ...taskWhere, due_date: { [Op.lt]: new Date() }, stage_id: { [Op.ne]: completedId } }, include: assignmentInclude }),
   ]);
 
-  // Stage counts + priority counts using parallel queries
+  // Stage counts + priority counts
   const [stageCntRaw, priorityCntRaw] = await Promise.all([
     Promise.all(stages.map(s =>
       Task.count({ where: { ...taskWhere, stage_id: s.stage_id }, include: assignmentInclude })
@@ -62,6 +96,29 @@ async function buildReportData(req) {
 
   const stageCounts    = buildStageCounts(stages, stageCntRaw);
   const priorityCounts = buildPriorityCounts(priorities, priorityCntRaw);
+
+  // ── Global completion stats (on-time rate + avg completion time) ────────────
+  // Fetch completed tasks with due_date so we can build stats
+  const completedTaskRows = await Task.findAll({
+    where: { ...taskWhere, stage_id: completedId },
+    attributes: ['task_id', 'created_at', 'due_date'],
+    include: assignmentInclude,
+    subQuery: false,
+    raw: true,
+  });
+
+  const completedTaskIds = completedTaskRows.map(r => r.task_id);
+  const completionTsMap  = await fetchCompletionTimestamps(completedTaskIds, completedId);
+
+  const globalCompletionRecords = completedTaskRows
+    .filter(r => completionTsMap.has(r.task_id))
+    .map(r => ({
+      createdAt:   new Date(r.created_at),
+      completedAt: completionTsMap.get(r.task_id),
+      dueDate:     new Date(r.due_date),
+    }));
+
+  const globalStats = buildCompletionStats(globalCompletionRecords);
 
   // Employee performance
   const empWhere = { is_deleted: false };
@@ -79,12 +136,40 @@ async function buildReportData(req) {
     const empTaskWhere = { is_deleted: false, created_at: { [Op.between]: [from, to] } };
     if (req.user.role === 'Manager') empTaskWhere.created_by_user_id = req.user.id;
     const empAssign = [{ model: TaskAssignment, as: 'assignments', where: { employee_id: emp.employee_id }, required: true }];
-    const [assigned, completed, overdue] = await Promise.all([
+
+    const [assigned, completedCount, overdue] = await Promise.all([
       Task.count({ where: empTaskWhere, include: empAssign }),
       Task.count({ where: { ...empTaskWhere, stage_id: completedId }, include: empAssign }),
       Task.count({ where: { ...empTaskWhere, due_date: { [Op.lt]: new Date() }, stage_id: { [Op.ne]: completedId } }, include: empAssign }),
     ]);
-    return enrichPerformanceRow({ employee: emp, assigned, completed, overdue });
+
+    // Per-employee completion stats
+    const empCompletedRows = await Task.findAll({
+      where: { ...empTaskWhere, stage_id: completedId },
+      attributes: ['task_id', 'created_at', 'due_date'],
+      include: empAssign,
+      subQuery: false,
+      raw: true,
+    });
+    const empIds   = empCompletedRows.map(r => r.task_id);
+    const empTsMap = await fetchCompletionTimestamps(empIds, completedId);
+    const empCompletionRecords = empCompletedRows
+      .filter(r => empTsMap.has(r.task_id))
+      .map(r => ({
+        createdAt:   new Date(r.created_at),
+        completedAt: empTsMap.get(r.task_id),
+        dueDate:     new Date(r.due_date),
+      }));
+    const empStats = buildCompletionStats(empCompletionRecords);
+
+    return enrichPerformanceRow({
+      employee: emp,
+      assigned,
+      completed: completedCount,
+      overdue,
+      on_time_rate_display: empStats.onTimeRateDisplay,
+      avg_completion_display: empStats.avgDisplay,
+    });
   }));
 
   const performance = sortPerformanceRows(rawPerf);
@@ -105,6 +190,8 @@ async function buildReportData(req) {
   return {
     totalTasks, completedTasks, overdueTasks,
     completionRate: completionRate(completedTasks, totalTasks),
+    onTimeRateDisplay:    globalStats.onTimeRateDisplay,
+    avgCompletionDisplay: globalStats.avgDisplay,
     stageCounts, priorityCounts, performance, attSummary,
     dateFrom: localDateStr(from),
     dateTo:   localDateStr(to),

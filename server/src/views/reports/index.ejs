@@ -72,19 +72,31 @@
 <!-- Summary KPIs -->
 <div class="row g-3 mb-4">
   <% const kpis = [
-    { label:'Total Tasks',      value: totalTasks,     color:'#4f46e5' },
-    { label:'Completed',        value: completedTasks, color:'#10b981' },
-    { label:'Overdue',          value: overdueTasks,   color:'#f97316' },
-    { label:'Completion Rate',  value: completionRate+'%', color:'#3b82f6' },
+    { label:'Total Tasks',           value: totalTasks,             color:'#4f46e5' },
+    { label:'Completed',             value: completedTasks,         color:'#10b981' },
+    { label:'Overdue',               value: overdueTasks,           color:'#f97316' },
+    { label:'Completion Rate',       value: completionRate+'%',     color:'#3b82f6' },
+    { label:'On-Time Rate',          value: onTimeRateDisplay,      color:'#10b981' },
+    { label:'Avg Completion Time',   value: avgCompletionDisplay,   color:'#8b5cf6' },
   ]; %>
   <% kpis.forEach(k => { %>
-  <div class="col-6 col-md-3">
+  <div class="col-6 col-md-4 col-xl-2">
     <div class="card border-0 shadow-sm p-3 text-center">
-      <div style="font-size:1.8rem;font-weight:700;color:<%- k.color %>;"><%= k.value %></div>
+      <div style="font-size:1.5rem;font-weight:700;color:<%- k.color %>;"><%= k.value %></div>
       <div class="text-muted small"><%= k.label %></div>
     </div>
   </div>
   <% }) %>
+</div>
+
+<!-- Metric definitions note -->
+<div class="alert alert-light border small py-2 px-3 mb-4" role="note">
+  <strong>Definitions:</strong>
+  <em>Completion time</em> = task created_at → timestamp it entered the Completed stage (from stage history).
+  <em>On-time</em> = completed at or before the end of the task's due date.
+  <em>On-time completion rate</em> = on-time completed ÷ all completed tasks in the filtered set.
+  <em>Average completion time</em> = mean completion time over completed tasks in the filtered set.
+  "No data" is shown when there are no completed tasks.
 </div>
 
 <!-- Charts row -->
@@ -190,11 +202,20 @@
   <div class="table-responsive">
     <table class="table table-hover align-middle mb-0 small">
       <thead class="table-light">
-        <tr><th>Employee</th><th>Department</th><th class="text-center">Assigned</th><th class="text-center">Completed</th><th class="text-center">Overdue</th><th class="text-center">Rate</th></tr>
+        <tr>
+          <th>Employee</th>
+          <th>Department</th>
+          <th class="text-center">Assigned</th>
+          <th class="text-center">Completed</th>
+          <th class="text-center">Overdue</th>
+          <th class="text-center">Rate</th>
+          <th class="text-center">On-Time Rate</th>
+          <th class="text-center">Avg Completion</th>
+        </tr>
       </thead>
       <tbody>
         <% if (!performance || !performance.length) { %>
-          <tr><td colspan="6" class="text-center py-4 text-muted">No data for selected filters.</td></tr>
+          <tr><td colspan="8" class="text-center py-4 text-muted">No data for selected filters.</td></tr>
         <% } %>
         <% (performance||[]).forEach(r => { %>
           <tr>
@@ -208,6 +229,8 @@
                 <%= r.completion_rate %>%
               </span>
             </td>
+            <td class="text-center small"><%= r.on_time_rate_display || 'No data' %></td>
+            <td class="text-center small"><%= r.avg_completion_display || 'No data' %></td>
           </tr>
         <% }) %>
       </tbody>

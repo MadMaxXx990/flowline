@@ -36,10 +36,12 @@ async function buildExcel(data, safe, stream) {
   sum.addRow([]);
   sum.addRow(['Metric', 'Value']);
   sum.addRows([
-    ['Total Tasks',     data.totalTasks],
-    ['Completed',       data.completedTasks],
-    ['Overdue',         data.overdueTasks],
-    ['Completion Rate', `${data.completionRate}%`],
+    ['Total Tasks',            data.totalTasks],
+    ['Completed',              data.completedTasks],
+    ['Overdue',                data.overdueTasks],
+    ['Completion Rate',        `${data.completionRate}%`],
+    ['On-Time Completion Rate', data.onTimeRateDisplay    ?? 'No data'],
+    ['Avg Completion Time',     data.avgCompletionDisplay ?? 'No data'],
   ]);
   sum.addRow([]);
   sum.addRow(['Stage', 'Count']);
@@ -50,11 +52,13 @@ async function buildExcel(data, safe, stream) {
 
   // ── Employee performance sheet ─────────────────────────────────────────────
   const perf = wb.addWorksheet('Employee Performance');
-  perf.addRow(['Employee', 'Department', 'Assigned', 'Completed', 'Overdue', 'Rate %']);
+  perf.addRow(['Employee', 'Department', 'Assigned', 'Completed', 'Overdue', 'Rate %', 'On-Time Rate', 'Avg Completion']);
   data.performance.forEach(r => perf.addRow([
     safe(`${r.employee.first_name} ${r.employee.last_name}`),
     safe(r.employee.department?.department_name ?? ''),
     r.assigned, r.completed, r.overdue, r.completion_rate,
+    safe(r.on_time_rate_display    ?? 'No data'),
+    safe(r.avg_completion_display  ?? 'No data'),
   ]));
 
   // ── Attendance sheet ───────────────────────────────────────────────────────
@@ -95,17 +99,19 @@ function buildPdf(data, stream) {
 
   // ── KPI boxes ──────────────────────────────────────────────────────────────
   function kpiBox(x, y, label, value, color) {
-    doc.roundedRect(x, y, 118, 54, 4).stroke(color);
-    doc.fillColor(color).fontSize(22).font('Helvetica-Bold')
-       .text(String(value), x + 8, y + 8, { width: 102, align: 'center' });
-    doc.fillColor(GRAY).fontSize(8).font('Helvetica')
-       .text(label, x + 8, y + 38, { width: 102, align: 'center' });
+    doc.roundedRect(x, y, 88, 54, 4).stroke(color);
+    doc.fillColor(color).fontSize(18).font('Helvetica-Bold')
+       .text(String(value), x + 4, y + 8, { width: 80, align: 'center' });
+    doc.fillColor(GRAY).fontSize(7).font('Helvetica')
+       .text(label, x + 4, y + 38, { width: 80, align: 'center' });
   }
   const ky = 70;
-  kpiBox(40,  ky, 'Total Tasks',     data.totalTasks,           INDIGO);
-  kpiBox(166, ky, 'Completed',       data.completedTasks,       GREEN);
-  kpiBox(292, ky, 'Overdue',         data.overdueTasks,         RED);
-  kpiBox(418, ky, 'Completion Rate', `${data.completionRate}%`, INDIGO);
+  kpiBox(40,  ky, 'Total Tasks',      data.totalTasks,                        INDIGO);
+  kpiBox(134, ky, 'Completed',        data.completedTasks,                    GREEN);
+  kpiBox(228, ky, 'Overdue',          data.overdueTasks,                      RED);
+  kpiBox(322, ky, 'Completion Rate',  `${data.completionRate}%`,              INDIGO);
+  kpiBox(416, ky, 'On-Time Rate',     data.onTimeRateDisplay    ?? 'No data', GREEN);
+  kpiBox(510, ky, 'Avg Completion',   data.avgCompletionDisplay ?? 'No data', INDIGO);
   doc.y = ky + 70;
 
   // ── Section title helper ───────────────────────────────────────────────────
@@ -166,13 +172,15 @@ function buildPdf(data, stream) {
 
   sectionTitle('Employee Performance');
   table(
-    ['Employee', 'Department', 'Assigned', 'Completed', 'Overdue', 'Rate %'],
+    ['Employee', 'Department', 'Assigned', 'Completed', 'Overdue', 'Rate %', 'On-Time', 'Avg Time'],
     data.performance.map(r => [
       `${r.employee.first_name} ${r.employee.last_name}`,
       r.employee.department?.department_name ?? '—',
       r.assigned, r.completed, r.overdue, `${r.completion_rate}%`,
+      r.on_time_rate_display   ?? 'No data',
+      r.avg_completion_display ?? 'No data',
     ]),
-    [130, 110, 50, 60, 55, pageW - 405],
+    [110, 90, 40, 55, 45, 40, 50, pageW - 430],
   );
 
   // ── Running footer on each new page ───────────────────────────────────────

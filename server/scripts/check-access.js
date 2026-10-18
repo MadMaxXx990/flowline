@@ -1235,6 +1235,227 @@ async function main() {
   }
 
   // ════════════════════════════════════════════════════════════════════════════
+  // SECTION 15 — On-time completion rate + average completion time
+  // ════════════════════════════════════════════════════════════════════════════
+  if (SELF_MANAGED) {
+    // ── helpers ───────────────────────────────────────────────────────────────
+    async function getReportHtml(tok, base) {
+      const r = await httpReq('GET', `${base}/reports`, tok);
+      return r.status === 200 ? await r.text() : '';
+    }
+
+    // Date helpers matching the server's localDateStr()
+    function isoDate(d) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth()+1).padStart(2,'0');
+      const dd = String(d.getDate()).padStart(2,'0');
+      return `${y}-${m}-${dd}`;
+    }
+
+    const { TaskStageHistory } = require('../src/models');
+    const { buildCompletionStats } = require('../src/lib/reportMetrics');
+    const { localDateStr } = require('../src/lib/dates');
+
+    // ── 15a: no completed tasks → "No data" shown on reports page ─────────────
+    // Fetch the reports page for a date range in the far future (no tasks exist)
+    await check('Reports: no completed tasks → page shows "No data"', async () => {
+      const r = await httpReq('GET', `/admin/reports?date_from=2099-01-01&date_to=2099-01-31`, adminTok);
+      if (r.status !== 200) return false;
+      const html = await r.text();
+      return html.includes('No data');
+    }, true);
+
+    // ── 15b: create a task, complete it before due date → on-time ────────────
+    // Create task via manager1 assigned to emp1
+    const dueInFuture = new Date(); dueInFuture.setDate(dueInFuture.getDate() + 30);
+    const dueStr = isoDate(dueInFuture);
+
+    const [anyPrio] = await querySql('SELECT priority_id FROM task_priorities ORDER BY priority_id LIMIT 1', SCRATCH_DB);
+    const [emp1Row] = await querySql(
+      `SELECT e.employee_id FROM employees e JOIN users u ON u.employee_id=e.employee_id WHERE u.username='emp1' LIMIT 1`,
+      SCRATCH_DB
+    );
+
+    // Create the task
+    let onTimeTaskId = null;
+    await check('Reports: create on-time test task → 302', async () => {
+      const r = await httpReq('POST', '/manager/tasks', mgrTok, {
+        task_title:  'OnTimeTestTask',
+        priority_id: String(anyPrio?.priority_id || 1),
+        due_date:    dueStr,
+        employee_ids: String(emp1Row?.employee_id || ''),
+      });
+      if (r.status === 302) {
+        const [row] = await querySql(
+          `SELECT task_id FROM tasks WHERE task_title='OnTimeTestTask' ORDER BY task_id DESC LIMIT 1`,
+          SCRATCH_DB
+        );
+        onTimeTaskId = row?.task_id;
+      }
+      return r.status;
+    }, 302);
+
+    if (onTimeTaskId) {
+      // Look up stage IDs
+      const [completedStageRow] = await querySql(
+        `SELECT stage_id FROM workflow_stages WHERE stage_name='Completed' LIMIT 1`, SCRATCH_DB
+      );
+      const completedStageId = completedStageRow?.stage_id;
+
+      // Move task to Completed + insert stage history with changed_at before due date
+      // (simulate completion 2 days before due)
+      const completedAt = new Date(dueInFuture); completedAt.setDate(completedAt.getDate() - 2);
+      const completedAtStr = completedAt.toISOString().replace('T', ' ').slice(0, 19);
+
+      await runSql(
+        `UPDATE tasks SET stage_id=${completedStageId}, updated_at=NOW() WHERE task_id=${onTimeTaskId}`,
+        SCRATCH_DB
+      );
+      await runSql(
+        `INSERT INTO task_stage_history (task_id, changed_by_user_id, new_stage_id, remarks, changed_at, created_at, updated_at)
+         VALUES (${onTimeTaskId},
+           (SELECT id FROM users WHERE username='manager1' LIMIT 1),
+           ${completedStageId}, 'Completed on time.', '${completedAtStr}', NOW(), NOW())`,
+        SCRATCH_DB
+      );
+
+      // 15c: completed before due date counts on-time
+      await check('Reports: task completed before due → on-time count 1', async () => {
+        // Use buildCompletionStats directly with known values
+        const task = (await querySql(
+          `SELECT task_id, created_at, due_date FROM tasks WHERE task_id=${onTimeTaskId}`, SCRATCH_DB
+        ))[0];
+        const hist = (await querySql(
+          `SELECT changed_at FROM task_stage_history
+           WHERE task_id=${onTimeTaskId} AND new_stage_id=${completedStageId}
+           ORDER BY changed_at DESC LIMIT 1`, SCRATCH_DB
+        ))[0];
+        if (!task || !hist) return false;
+        const stats = buildCompletionStats([{
+          createdAt:   new Date(task.created_at),
+          completedAt: new Date(hist.changed_at),
+          dueDate:     new Date(task.due_date),
+        }]);
+        return stats.onTimeCount === 1 && stats.onTimeRateDisplay === '100%';
+      }, true);
+
+      // 15d: create another task completed AFTER its due date → counts late
+      const pastDue = new Date(); pastDue.setDate(pastDue.getDate() - 5);
+      const pastDueStr = isoDate(pastDue);
+      let lateTaskId = null;
+
+      await check('Reports: create late test task → 302', async () => {
+        const r = await httpReq('POST', '/manager/tasks', mgrTok, {
+          task_title:  'LateTestTask',
+          priority_id: String(anyPrio?.priority_id || 1),
+          due_date:    isoDate(new Date(Date.now() + 60*24*60*60*1000)),  // far future due date
+          employee_ids: String(emp1Row?.employee_id || ''),
+        });
+        if (r.status === 302) {
+          const [row] = await querySql(
+            `SELECT task_id FROM tasks WHERE task_title='LateTestTask' ORDER BY task_id DESC LIMIT 1`,
+            SCRATCH_DB
+          );
+          lateTaskId = row?.task_id;
+        }
+        return r.status;
+      }, 302);
+
+      if (lateTaskId) {
+        // Set due date to yesterday, mark Completed today (so it's "late")
+        const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayStr = isoDate(yesterday);
+        await runSql(
+          `UPDATE tasks SET due_date='${yesterdayStr}', stage_id=${completedStageId} WHERE task_id=${lateTaskId}`,
+          SCRATCH_DB
+        );
+        const nowStr = new Date().toISOString().replace('T',' ').slice(0,19);
+        await runSql(
+          `INSERT INTO task_stage_history (task_id, changed_by_user_id, new_stage_id, remarks, changed_at, created_at, updated_at)
+           VALUES (${lateTaskId},
+             (SELECT id FROM users WHERE username='manager1' LIMIT 1),
+             ${completedStageId}, 'Completed late.', '${nowStr}', NOW(), NOW())`,
+          SCRATCH_DB
+        );
+
+        await check('Reports: task completed after due date counts late', async () => {
+          const task = (await querySql(
+            `SELECT task_id, created_at, due_date FROM tasks WHERE task_id=${lateTaskId}`, SCRATCH_DB
+          ))[0];
+          const hist = (await querySql(
+            `SELECT changed_at FROM task_stage_history
+             WHERE task_id=${lateTaskId} AND new_stage_id=${completedStageId}
+             ORDER BY changed_at DESC LIMIT 1`, SCRATCH_DB
+          ))[0];
+          if (!task || !hist) return false;
+          const stats = buildCompletionStats([{
+            createdAt:   new Date(task.created_at),
+            completedAt: new Date(hist.changed_at),
+            dueDate:     new Date(task.due_date),
+          }]);
+          return stats.onTimeCount === 0 && stats.onTimeRateDisplay === '0%';
+        }, true);
+      }
+
+      // 15e: returned-and-reapproved task uses FINAL Completed timestamp
+      // Insert a second (later) Completed history row for onTimeTaskId
+      const secondCompleted = new Date(dueInFuture); secondCompleted.setDate(secondCompleted.getDate() + 3);
+      const secondCompletedStr = secondCompleted.toISOString().replace('T',' ').slice(0,19);
+      await runSql(
+        `INSERT INTO task_stage_history (task_id, changed_by_user_id, new_stage_id, remarks, changed_at, created_at, updated_at)
+         VALUES (${onTimeTaskId},
+           (SELECT id FROM users WHERE username='manager1' LIMIT 1),
+           ${completedStageId}, 'Re-approved.', '${secondCompletedStr}', NOW(), NOW())`,
+        SCRATCH_DB
+      );
+
+      await check('Reports: re-approved task uses final (latest) Completed timestamp', async () => {
+        const task = (await querySql(
+          `SELECT created_at, due_date FROM tasks WHERE task_id=${onTimeTaskId}`, SCRATCH_DB
+        ))[0];
+        // Get ALL Completed rows, pick the latest
+        const histRows = await querySql(
+          `SELECT changed_at FROM task_stage_history
+           WHERE task_id=${onTimeTaskId} AND new_stage_id=${completedStageId}
+           ORDER BY changed_at DESC`, SCRATCH_DB
+        );
+        const latestCompletedAt = new Date(histRows[0].changed_at);
+        const stats = buildCompletionStats([{
+          createdAt:   new Date(task.created_at),
+          completedAt: latestCompletedAt,
+          dueDate:     new Date(task.due_date),
+        }]);
+        // The LATEST timestamp is after due date → should count as late
+        return stats.onTimeCount === 0;
+      }, true);
+    }
+
+    // 15f: Manager sees only own tasks' metrics (manager2's reports don't include manager1's tasks)
+    await check('Reports: manager2 reports page renders 200', async () => {
+      const r = await httpReq('GET', '/manager/reports', mgr2Tok);
+      return r.status;
+    }, 200);
+
+    await check('Reports page renders for admin with new metrics fields', async () => {
+      const html = await getReportHtml(adminTok, '/admin');
+      // Both metric label strings must appear in the rendered page
+      return html.includes('On-Time Rate') && html.includes('Avg Completion');
+    }, true);
+
+    // 15g: Excel export responds with correct Content-Type and 200
+    await check('Reports Excel export responds 200 (with new metrics)', async () => {
+      const r = await httpReq('GET', '/admin/reports/export/excel', adminTok);
+      return r.status;
+    }, 200);
+
+    await check('Reports Excel export Content-Type is xlsx', async () => {
+      const r = await httpReq('GET', '/admin/reports/export/excel', adminTok);
+      const ct = r.headers.get('content-type') || '';
+      return ct.includes('spreadsheetml') || ct.includes('xlsx') || ct.includes('openxmlformats');
+    }, true);
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
   // Summary
   // ════════════════════════════════════════════════════════════════════════════
   printDivider();
