@@ -83,38 +83,55 @@
   <div class="row g-3 mb-4">
     <div class="col-md-6">
       <label class="form-label small fw-semibold">Department <span class="text-danger">*</span></label>
-      <select name="department_id" id="empDeptSelect" class="form-select" required
-              data-team-dept-select
-              data-employees-json="<%- JSON.stringify(teams.map(t=>({id:t.team_id,name:t.team_name,dept:t.department_id}))) %>"
-              data-target-lead="empTeamSelect">
-        <option value="">Select…</option>
+      <%
+        // Resolve current department name for free-text field
+        const _deptName = f.department_name
+          || (depts||[]).find(d=>String(d.department_id)===String(f.department_id))?.department_name
+          || '';
+      %>
+      <input name="department_name"
+             class="form-control"
+             required
+             list="deptSuggestions"
+             autocomplete="off"
+             placeholder="Type or select a department…"
+             value="<%= _deptName %>" />
+      <datalist id="deptSuggestions">
         <% (depts || []).forEach(d => { %>
-          <option value="<%= d.department_id %>" <%= String(f.department_id) === String(d.department_id) ? 'selected' : '' %>>
-            <%= d.department_name %>
-          </option>
+          <option value="<%= d.department_name %>"></option>
         <% }) %>
-      </select>
+      </datalist>
+      <div class="form-text">Existing departments shown as suggestions; type a new name to create one.</div>
     </div>
     <div class="col-md-6">
       <label class="form-label small fw-semibold">Position <span class="text-danger">*</span></label>
-      <select name="position_id" class="form-select" required>
-        <option value="">Select…</option>
+      <%
+        const _posName = f.position_name
+          || (positions||[]).find(p=>String(p.position_id)===String(f.position_id))?.position_name
+          || '';
+      %>
+      <input name="position_name"
+             class="form-control"
+             required
+             list="posSuggestions"
+             autocomplete="off"
+             placeholder="Type or select a position…"
+             value="<%= _posName %>" />
+      <datalist id="posSuggestions">
         <% (positions || []).forEach(p => { %>
-          <option value="<%= p.position_id %>" <%= String(f.position_id) === String(p.position_id) ? 'selected' : '' %>>
-            <%= p.position_name %>
-          </option>
+          <option value="<%= p.position_name %>"></option>
         <% }) %>
-      </select>
+      </datalist>
+      <div class="form-text">Existing positions shown as suggestions; type a new name to create one.</div>
     </div>
     <div class="col-md-6">
       <label class="form-label small fw-semibold">Team <span class="text-muted">(optional)</span></label>
-      <select name="team_id" id="empTeamSelect" class="form-select" data-team-lead-select>
+      <select name="team_id" id="empTeamSelect" class="form-select">
         <option value="">None</option>
         <% (teams || []).forEach(t => { %>
           <option value="<%= t.team_id %>"
                   data-dept="<%= t.department_id %>"
-                  <%= String(f.team_id) === String(t.team_id) ? 'selected' : '' %>
-                  <% if (f.department_id && String(t.department_id) !== String(f.department_id)) { %>hidden<% } %>>
+                  <%= String(f.team_id) === String(t.team_id) ? 'selected' : '' %>>
             <%= t.team_name %>
           </option>
         <% }) %>

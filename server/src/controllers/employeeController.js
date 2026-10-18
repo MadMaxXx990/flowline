@@ -105,7 +105,8 @@ const newForm = async (req, res) => {
 const store = async (req, res) => {
   const {
     first_name, last_name, email, phone,
-    department_id, position_id, supervisor_id, team_id,
+    department_name, position_name,
+    supervisor_id, team_id,
     employment_type, hire_date,
     role_id, username, password,
   } = req.body;
@@ -124,6 +125,12 @@ const store = async (req, res) => {
   // Required field validation
   if (!first_name || !last_name || !email || !username || !password) {
     return renderError('First name, last name, email, username and password are required.');
+  }
+  if (!department_name || !department_name.trim()) {
+    return renderError('Department is required.');
+  }
+  if (!position_name || !position_name.trim()) {
+    return renderError('Position is required.');
   }
   // Basic email format
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
@@ -155,13 +162,23 @@ const store = async (req, res) => {
     return renderError(`Username "${username}" is already taken.${hint}`);
   }
 
+  // Find-or-create department and position by name
+  const [dept]  = await Department.findOrCreate({
+    where:    { department_name: department_name.trim() },
+    defaults: { department_name: department_name.trim(), is_deleted: false },
+  });
+  const [pos]   = await Position.findOrCreate({
+    where:    { position_name: position_name.trim() },
+    defaults: { position_name: position_name.trim() },
+  });
+
   const profile_photo_url = req.file ? `uploads/${req.file.filename}` : null;
 
   const emp = await Employee.create({
     first_name, last_name, email,
     phone:           phone           || null,
-    department_id:   department_id   ? +department_id   : null,
-    position_id:     position_id     ? +position_id     : null,
+    department_id:   dept.department_id,
+    position_id:     pos.position_id,
     supervisor_id:   supervisor_id   ? +supervisor_id   : null,
     team_id:         team_id         ? +team_id         : null,
     employment_type: employment_type || null,
@@ -204,8 +221,8 @@ const editForm = async (req, res) => {
       last_name:       emp.last_name,
       email:           emp.email,
       phone:           emp.phone           ?? '',
-      department_id:   String(emp.department_id ?? ''),
-      position_id:     String(emp.position_id   ?? ''),
+      department_name: emp.department?.department_name ?? '',
+      position_name:   emp.position?.position_name     ?? '',
       team_id:         emp.team_id ? String(emp.team_id) : '',
       employment_type: emp.employment_type ?? '',
       hire_date:       emp.hire_date ? String(emp.hire_date).split('T')[0] : '',
@@ -222,7 +239,8 @@ const update = async (req, res) => {
   const id = +req.params.id;
   const {
     first_name, last_name, email, phone,
-    department_id, position_id, supervisor_id, team_id,
+    department_name, position_name,
+    supervisor_id, team_id,
     employment_type, hire_date, status,
     role_id, username, password,
   } = req.body;
@@ -266,13 +284,32 @@ const update = async (req, res) => {
     if (usernameTaken) return renderError('That username is already taken.');
   }
 
+  // Find-or-create department / position if a name was typed
+  let resolvedDeptId = emp.department_id;
+  let resolvedPosId  = emp.position_id;
+
+  if (department_name && department_name.trim()) {
+    const [dept] = await Department.findOrCreate({
+      where:    { department_name: department_name.trim() },
+      defaults: { department_name: department_name.trim(), is_deleted: false },
+    });
+    resolvedDeptId = dept.department_id;
+  }
+  if (position_name && position_name.trim()) {
+    const [pos] = await Position.findOrCreate({
+      where:    { position_name: position_name.trim() },
+      defaults: { position_name: position_name.trim() },
+    });
+    resolvedPosId = pos.position_id;
+  }
+
   const profile_photo_url = req.file ? `uploads/${req.file.filename}` : emp.profile_photo_url;
 
   await emp.update({
     first_name, last_name, email,
     phone:           phone           || null,
-    department_id:   department_id   ? +department_id   : null,
-    position_id:     position_id     ? +position_id     : null,
+    department_id:   resolvedDeptId  ?? null,
+    position_id:     resolvedPosId   ?? null,
     supervisor_id:   supervisor_id   ? +supervisor_id   : null,
     team_id:         team_id         ? +team_id         : null,
     employment_type: employment_type || null,
